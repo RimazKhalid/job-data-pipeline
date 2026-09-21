@@ -6,6 +6,8 @@ We take each raw source exactly as it landed in Snowflake, and turn it into a cl
 
 **Golden rule:** we do not clean or standardize any data here (e.g. unifying city names, computing `city_std`, or unescaping HTML) — only clear naming and data type conversion. Standardization happens at the `intermediate`/`marts` stage.
 
+**Clarification added after review:** interpreting a single source's own raw signal into its standard meaning (e.g. Workable's `telecommuting` boolean → `'Remote'`/`'OnSite'`, or SmartRecruiters' `location.remote`/`location.hybrid` booleans → `'Remote'`/`'Hybrid'`/`'OnSite'`) **is allowed here** — this is not standardization across sources, it's translating one source's own data into meaning without looking at any other source. What's *not* allowed at this stage is comparing or merging values *between* sources (e.g. deciding two records from different sources are duplicates) — that stays reserved for `intermediate`.
+
 ---
 
 ## Shared Columns (same name across all six tables)
@@ -58,11 +60,11 @@ We take each raw source exactly as it landed in Snowflake, and turn it into a cl
 | `locations_raw` | VARIANT | The raw location array for the job (kept for reference) |
 
 ### ⚠️ Things that caused doubt or were real bugs we fixed
-
-1. **`state` is not a publish-status field:** Workable's `state` field is a **region name** (e.g. "Makkah Province"), **not** a flag indicating whether the job is published or draft — this confusion happened in an earlier version of the pull script (not in staging), but it's worth noting here as a general warning.
-2. **`location_raw` is always blank here** — by design, since Workable gives `city`/`region`/`country` separately instead of one ready-made line like Ashby.
-3. **Important, unexpected discovery:** one role open in multiple cities arrives at Workable as **several entirely separate job objects** (same title, different `shortcode`) — not "one job with multiple locations." **This is not a duplicate to be removed — each one is a genuinely distinct posting.** Must be remembered during dedup later.
-
+1. **Real bug in the first version of the code:** we used `IFF(telecommuting, 'Remote', null)` — which **silently turned any `false` (i.e. OnSite) job into null** instead of `'OnSite/Hybrid'`. **Fixed with a `CASE WHEN`** that explicitly distinguishes all three states (true / false / not present).
+2. **`state` is not a publish-status field:** Workable's `state` field is a **region name** (e.g. "Makkah Province"), **not** a flag indicating whether the job is published or draft — this confusion happened in an earlier version of the pull script (not in staging), but it's worth noting here as a general warning.
+3. **`location_raw` is always blank here** — by design, since Workable gives `city`/`region`/`country` separately instead of one ready-made line like Ashby.
+4. **Important, unexpected discovery:** one role open in multiple cities arrives at Workable as **several entirely separate job objects** (same title, different `shortcode`) — not "one job with multiple locations." **This is not a duplicate to be removed — each one is a genuinely distinct posting.** Must be remembered during dedup later.
+5. **`employment_type` was initially missing** — we assumed it wasn't present in the source and set it to null, but after checking a real raw sample we found it does exist, under the name `employment_type` (snake_case, not camelCase). **Lesson: never assume a field is absent without checking a real raw sample first.**
 
 ---
 
@@ -104,11 +106,46 @@ We take each raw source exactly as it landed in Snowflake, and turn it into a cl
 
 ---
 
-## `stg_smartrecruiters_jobs`
+## `stg_smartrecruiters_jobs` (v3 — description added)
 
+⚠️ **This supersedes the v2 section below** — the pull script was extended to fetch per-job detail (`GET /postings/{id}`) in addition to the postings list, so `description_plain` is now populated instead of always null.
 
-**Raw shape:** the file itself **is a JSON array directly** (not wrapped under a `jobs`/`data` key) — `LATERAL FLATTEN` runs directly on `raw_data` itself, the fields inside each record are genuinely raw.
+**Raw shape:** unchanged from v2 — the file is a JSON array directly, `LATERAL FLATTEN` on `raw_data`. What changed is that each job record now also carries a `jobAd.sections` object with the description content, verified against a real sample (Bosch Group).
 
+### What the description actually looks like
+The description isn't a single field — it's split into **separate named sections**, each with a `title` and raw HTML `text`:
+- `companyDescription`
+- `jobDescription`
+- `qualifications`
+- `additionalInformation`
+
+### SmartRecruiters-specific columns (v3, updated)
+| Column | Type | Why |
+|---|---|---|
+| `requisition_ref` | STRING | The company's internal requisition reference (`refNumber`) |
+| `industry_label` | STRING | Industry classification (e.g. "Management Consulting") |
+| `function_label` | STRING | Job function classification (e.g. "Engineering", "Project Management") |
+| `experience_level` | STRING | Seniority level (e.g. "Mid-Senior Level", "Executive") |
+| `visibility` | STRING | Posting visibility flag (e.g. "PUBLIC") |
+| `language_code` | STRING | Language the posting was written in (e.g. "en", "en-GB") |
+| `company_description_raw` | STRING | The `companyDescription` section — general "about us" boilerplate, kept separate rather than merged into the shared `description_plain` |
+| `qualifications_raw` | STRING | The `qualifications` section — kept separate so it can be queried on its own later if needed |
+| `additional_information_raw` | STRING | The `additionalInformation` section — often empty (see note below) |
+
+### ⚠️ Things that caused doubt or required a decision
+1. **A deliberate choice on what goes into the shared `description_plain`:** since the description arrives split into four sections, we mapped only `jobAd.sections.jobDescription.text` into the shared column (to stay consistent with what "the job description" means across every other source), and kept the other three sections (`companyDescription`, `qualifications`, `additionalInformation`) as SmartRecruiters-specific columns instead of concatenating everything together.
+2. **All text is kept raw, including HTML** (`<p>`, `<ul>`, `<li>`, `&#xa0;`) — same deliberate choice as Greenhouse's `content` field; no unescaping or stripping happens at this stage.
+3. **`additionalInformation` was an empty string (`""`), not null, in the sample we checked** — worth remembering if a future null-count check on `additional_information_raw` looks inconsistent with the other raw-text columns; `NULLIF(..., '')` could be applied later if a true null is preferred.
+4. **Not yet verified across multiple companies:** the section names (`companyDescription`, `jobDescription`, `qualifications`, `additionalInformation`) were confirmed against a Bosch Group sample only — worth spot-checking another company's data to confirm every SmartRecruiters customer uses the same fixed section names, rather than custom ones.
+5. **Performance tradeoff, worth remembering:** fetching the description requires one extra API request per job (on top of the original per-company postings request), which noticeably slows down the pull compared to the earlier list-only version — expected and accepted, not a bug.
+
+---
+
+## `stg_smartrecruiters_jobs` (v2 — for reference; superseded by v3 above)
+
+⚠️ **This is a full rebuild, replacing the v1 version described in earlier drafts of this README.** The original raw data landed in ADLS/Snowflake was actually pre-processed output from an older script (renamed/simplified fields: `job_id`, `job_title`, a flat `location` string, etc.) — not genuinely raw. The pull script has since been rewritten to hit the real SmartRecruiters API directly (`GET /v1/companies/{company}/postings?country=sa`) and save the response untouched. This model is built on a verified sample of that real output.
+
+**Raw shape:** the file itself **is a JSON array directly** (not wrapped under a `jobs`/`data` key) — `LATERAL FLATTEN` runs directly on `raw_data` itself, same structural pattern as before, but now the fields inside each record are genuinely raw.
 
 ### SmartRecruiters-specific columns
 | Column | Type | Why |
@@ -124,9 +161,9 @@ We take each raw source exactly as it landed in Snowflake, and turn it into a cl
 1. **A genuine improvement over every other source:** `location` is a rich object (`city`, `region`, `country`, `remote`, `hybrid`, `fullLocation`) — this is the **only source** where `remote` and `hybrid` are separate, explicit boolean flags. That lets `workplace_type_raw` here distinguish all three real states (`Remote` / `Hybrid` / `OnSite`) precisely, unlike every other source, which can only distinguish two (`Remote` vs. a combined `OnSite/Hybrid`).
 2. **`employment_type` needed a nested extraction:** the raw field is `typeOfEmployment.label`, not `typeOfEmployment` directly (which is an object with `id` and `label`).
 3. **`company_raw` needed a nested extraction too:** `company` is an object (`identifier`, `name`), not a plain string — pulled `company.name`.
-4. **`description_plain`:** In v1, it was null because the `/postings` (list) endpoint itself never returns a description field at all — confirmed by inspecting a real sample. **This is now resolved in v2 above**, once the script started calling the per-job detail endpoint too.
+4. **`description_plain` was always null in v2, for a genuinely different reason than in v1:** in the old (pre-processed) version, it was null because an earlier script stripped it after fetching it from the API. In v2, it was null because the `/postings` (list) endpoint itself never returns a description field at all — confirmed by inspecting a real sample. **This is now resolved in v3 above**, once the script started calling the per-job detail endpoint too.
 5. **`job_url` and `apply_url` currently hold the same value** (`ref`) — this is a technical API link (`https://api.smartrecruiters.com/...`), not a public job-posting page an applicant would actually visit. Worth revisiting if a real public apply link is needed later.
-
+6. **Same case-sensitivity trap as before, caught again:** the ADLS path used `smartrecruiters` (lowercase) while the `COPY INTO` initially referenced `SmartRecruiters` (mixed case) — same category of bug as the earlier Azure case-sensitivity issue, just recurring on this source's re-upload. Fixed by matching the exact case in the stage path.
 
 ---
 
@@ -147,6 +184,7 @@ We take each raw source exactly as it landed in Snowflake, and turn it into a cl
 2. **`content` (the description) is kept fully raw, including escaped HTML** (`&lt;p&gt;` instead of `<p>`) — **deliberately not unescaped here**; that cleanup happens at a later stage.
 3. **A deliberate choice between two date fields:** we chose `first_published` (the real first-publish date) over `updated_at` for `posting_date_raw` — we noticed `updated_at` was nearly identical across every record in the sample (`2026-08-24`), suggesting it mostly reflects the last time the script synced, not a date genuinely tied to each individual job.
 4. **A small oversight bug (fixed):** the first run failed with `depends on a source named 'raw.raw_greenhouse' which was not found` — because we forgot to add `raw_greenhouse` to `sources.yml` after adding it in Snowflake. **Lesson: any new RAW table needs to be registered in sources.yml before any model can use it.**
+5. **Confirmed after the review:** `country_raw`, `city_raw`, `region_raw`, and `workplace_type_raw` are genuinely always null here, verified directly against a fresh raw sample — Greenhouse's `location` object only ever contains a single `name` field (e.g. `"Riyadh, Saudi Arabia"`), with no separate city/region/country breakdown anywhere in the payload, and no remote/hybrid/onsite signal exists anywhere in the record (checked the full `metadata` array too). Not a bug — this source simply doesn't expose that structure.
 
 ---
 
@@ -161,9 +199,49 @@ We take each raw source exactly as it landed in Snowflake, and turn it into a cl
 
 ---
 
-## ✅ Current Status: All six sources are complete through the Staging layer
+## Staging Layer — Full Journey (from the start to now)
 
-| Source | RAW | Staging |
+### 1. Setup
+- Installed `dbt-core` + `dbt-snowflake`, initialized the dbt project (`job_pipeline`), connected to Snowflake (`job_pipeline_db`, schema `staging`)
+- Confirmed connection with `dbt debug` → `All checks passed!`
+- Registered all 6 RAW tables in `models/sources.yml` (`raw_ashby`, `raw_workable`, `raw_jsearch`, `raw_jooble`, `raw_smartrecruiters`, `raw_greenhouse`)
+
+### 2. Defined the shared column contract (14 columns)
+`source_job_id`, `source_name`, `company_raw`, `title_raw`, `location_raw`, `country_raw`, `city_raw`, `region_raw`, `workplace_type_raw`, `employment_type`, `description_plain`, `job_url`, `apply_url`, `posting_date_raw` — same names, same order, in every staging model, so they can be unioned later. Source-specific columns kept alongside, never dropped.
+
+### 3. Built each staging model, one at a time, verified against real raw samples
+
+- **`stg_ashby_jobs`** — `LATERAL FLATTEN` on `jobs` array; `company_raw` extracted from filename (Ashby gives no company field per job); kept `department`/`team`/`is_remote` as source-specific
+- **`stg_workable_jobs`** — verified real field names directly (an earlier guess based on a blog post was wrong); fixed a boolean-to-string bug that silently turned `OnSite` jobs into `null`; discovered one role posted to multiple cities arrives as separate job objects, not one record with multiple locations
+- **`stg_jsearch_jobs`** — parsed the escaped-JSON `response_raw` envelope; array key is `data` (not `jobs`); confirmed live in the data that `job_publisher` sometimes reads "Jooble," proving cross-source republishing
+- **`stg_jooble_jobs`** — same envelope pattern, but array key is `jobs`; confirmed `location` is a flat string with no city/region/country breakdown, and no remote/onsite signal exists at all
+- **`stg_smartrecruiters_jobs`** — rebuilt from scratch once after discovering the original RAW data wasn't genuinely raw (pre-processed by an earlier script); rebuilt again (v3) once the pull script was extended to fetch per-job descriptions (`jobAd.sections`)
+- **`stg_greenhouse_jobs`** — `Employment Type` had to be pulled out of a `metadata` array via a second flatten + filter + join, not a direct field; caught a missing `sources.yml` registration bug
+
+### 4. data-quality review across all six models
+1. `trim()` on every text field (was missing everywhere)
+2. `nullif(trim(x), '')` on every text field, so empty strings count as genuinely missing, not "present" (was only applied to one column before)
+3. Fixed `description_plain` in Workable producing a lone space `' '` instead of `NULL` when both source fields were empty
+4. Unified `posting_date_raw` to `timestamp_tz` everywhere (Workable was the outlier, using `date`)
+5. Added `ingested_at` (from each RAW table's `loaded_at`) to all six models — this was missing entirely, and the planned `ROW_NUMBER()` dedup step depends on it
+
+
+### 5. Extra fix made along the way
+- Rebuilt `location_raw` in Workable (previously left blank on purpose) to combine `city`/`region`/`country` into one line, matching how every other source populates it
+
+### 6. Bugs specific to the process itself (not the SQL logic)
+- `LATERAL FLATTEN` silently dropping a table-alias reference (`source.column`) — fixed by removing the alias prefix
+- `CONCAT_WS` returning a full `NULL` instead of skipping a null argument in one case — replaced with explicit `coalesce(...) || ...`
+- Several "fix didn't work" moments traced back to the edited file not being fully saved before re-running dbt, not a logic error
+
+### Final state
+All six models are staged, verified field-by-field against real API samples (not assumptions), and ready to feed into `int_jobs_unioned`.
+
+---
+
+## Current Status: All six sources are complete through the Staging layer
+
+
 |---|---|---|
 | Ashby | ✅ | ✅ |
 | Workable | ✅ | ✅ |
@@ -186,9 +264,7 @@ The instructor's PDF was explicit: **"one model per source, all producing the sa
 
 **In other words:** `int_jobs_unioned` is the first concrete step that implements the instructor's guidance to the letter, and the deduplication steps get built on top of it afterward (within-source first, then cross-source).
 
-
-
-
+---
 
 ## 👥 Team Workflow for dbt (every teammate must read this before making any change)
 
@@ -270,7 +346,7 @@ git push -u origin <your-name>
 2. GitHub will show a prompt for your new branch — click **Compare & pull request**
 3. Write a short description summarizing all the commits in your change
 4. Click **Create pull request**
-5. **Do not merge it yourself** — wait for another teammate (or Rimaz) to review it before merging into `main`, to avoid conflicts or a mistake reaching everyone's copy directly.
+5. **Do not merge it yourself** — wait for another teammate to review it before merging into `main`, to avoid conflicts or a mistake reaching everyone's copy directly.
 
 ---
 
