@@ -53,5 +53,6 @@ select
     nullif(trim(job_json:jobAd.sections.companyDescription.text::string), '')      as company_description_raw,
     nullif(trim(job_json:jobAd.sections.qualifications.text::string), '')          as qualifications_raw,
     nullif(trim(job_json:jobAd.sections.additionalInformation.text::string), '')   as additional_information_raw
+    job_json:customField                                                           as custom_fields_raw
 
 from flattened

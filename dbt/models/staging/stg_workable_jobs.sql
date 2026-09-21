@@ -57,3 +57,4 @@ select
     job_json:locations                                                              as locations_raw
 
 from flattened
+
