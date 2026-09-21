@@ -1,0 +1,14 @@
+# models/sources.yml
+version: 2
+
+sources:
+  - name: raw
+    database: job_pipeline_db
+    schema: raw
+    tables:
+      - name: raw_ashby
+      - name: raw_workable
+      - name: raw_jsearch
+      - name: raw_jooble
+      - name: raw_smartrecruiters
+      - name: raw_greenhouse     
