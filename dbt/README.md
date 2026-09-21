@@ -6,7 +6,7 @@ We take each raw source exactly as it landed in Snowflake, and turn it into a cl
 
 **Golden rule:** we do not clean or standardize any data here (e.g. unifying city names, computing `city_std`, or unescaping HTML) — only clear naming and data type conversion. Standardization happens at the `intermediate`/`marts` stage.
 
-**Clarification added after review:** interpreting a single source's own raw signal into its standard meaning (e.g. Workable's `telecommuting` boolean → `'Remote'`/`'OnSite'`, or SmartRecruiters' `location.remote`/`location.hybrid` booleans → `'Remote'`/`'Hybrid'`/`'OnSite'`) **is allowed here** — this is not standardization across sources, it's translating one source's own data into meaning without looking at any other source. What's *not* allowed at this stage is comparing or merging values *between* sources (e.g. deciding two records from different sources are duplicates) — that stays reserved for `intermediate`.
+**Clarification added after review:** interpreting a single source's own raw signal into its standard meaning (e.g. Workable's `telecommuting` boolean → `'Remote'`, with `false` left null because it cannot tell OnSite from Hybrid, or SmartRecruiters' `location.remote`/`location.hybrid` booleans → `'Remote'`/`'Hybrid'`/`'OnSite'`) **is allowed here** — this is not standardization across sources, it's translating one source's own data into meaning without looking at any other source. What's *not* allowed at this stage is comparing or merging values *between* sources (e.g. deciding two records from different sources are duplicates) — that stays reserved for `intermediate`.
 
 ---
 
@@ -63,7 +63,7 @@ We take each raw source exactly as it landed in Snowflake, and turn it into a cl
 1. **Real bug in the first version of the code:** we used `IFF(telecommuting, 'Remote', null)` — which **silently turned any `false` (i.e. OnSite) job into null** instead of `'OnSite/Hybrid'`. **Fixed with a `CASE WHEN`** that explicitly distinguishes all three states (true / false / not present).
 2. **`state` is not a publish-status field:** Workable's `state` field is a **region name** (e.g. "Makkah Province"), **not** a flag indicating whether the job is published or draft — this confusion happened in an earlier version of the pull script (not in staging), but it's worth noting here as a general warning.
 3. **`location_raw` is always blank here** — by design, since Workable gives `city`/`region`/`country` separately instead of one ready-made line like Ashby.
-4. **Important, unexpected discovery:** one role open in multiple cities arrives at Workable as **several entirely separate job objects** (same title, different `shortcode`) — not "one job with multiple locations." **This is not a duplicate to be removed — each one is a genuinely distinct posting.** Must be remembered during dedup later.
+4. **Important, unexpected discovery:** one role open in multiple cities arrives at Workable as **several separate job objects, one per city, under the same `shortcode`**. Measured in RAW_WORKABLE: 1,471 rows, 1,029 distinct shortcodes, 1,471 distinct shortcode + city pairs, and not a single row identical to another. **These are not duplicates and none are removed.** A row in `stg_workable_jobs` is therefore one job in one city, and the city is part of its surrogate key. `source_job_id` repeats by design in this model, so it is not tested for uniqueness here.
 5. **`employment_type` was initially missing** — we assumed it wasn't present in the source and set it to null, but after checking a real raw sample we found it does exist, under the name `employment_type` (snake_case, not camelCase). **Lesson: never assume a field is absent without checking a real raw sample first.**
 
 ---
@@ -237,6 +237,31 @@ The description isn't a single field — it's split into **separate named sectio
 ### Final state
 All six models are staged, verified field-by-field against real API samples (not assumptions), and ready to feed into `int_jobs_unioned`.
 
+### 7. Second review: keys, vocabulary and tests
+- **Surrogate key on every model.** Each staging model now starts with `source_record_sk`, built with `dbt_utils.generate_surrogate_key()` from `source_name` + `source_job_id`, so ids that happen to coincide across sources can never collide after the union. Workable adds `city_raw` to the key, because its rows are one job per city.
+- **`employment_type` uses one vocabulary** through the `normalize_employment_type` macro: `Full-time`, `Part-time`, `Contract`, `Internship`, `Temporary`, `Volunteer`, `Other`. Measured spellings it reconciles: `FullTime` vs `Full-time`, `PartTime` vs `Part-time`, `Intern` vs `Internship`, `Contract` vs `Contractor`. An unknown spelling passes through unchanged so the `accepted_values` test fails loudly instead of the value disappearing.
+- **`workplace_type_raw` uses `Remote` / `Hybrid` / `OnSite` / null** everywhere. Workable's `'OnSite/Hybrid'` became null, matching JSearch: a `false` remote flag does not say which of the two it is.
+- **Workable `location_raw`** read a `region` field that does not exist in Workable (absent on all 1,471 rows); it now reads `state`, and no longer leaves a leading comma when the city is missing.
+- **SmartRecruiters** had a missing comma before `custom_fields_raw`, which broke the model at run time.
+- **Tests** in `models/staging/schema.yml`: `unique` + `not_null` on `source_record_sk`, `not_null` on `source_job_id` and `ingested_at`, `accepted_values` on `workplace_type_raw` and `employment_type`, and `unique` on `source_job_id` for Jooble and JSearch where within-source duplicates are removed.
+- **`dbt_project.yml`**: staging and intermediate as views, marts as tables, replacing the unused `example` block.
+
+#### Key design decision: `source_name + source_job_id`, not `job_id + job_url`
+
+Two ways to build the surrogate key were considered.
+
+| | Option A: `job_id + job_url` | Option B: `source_name + source_job_id` (chosen) |
+|---|---|---|
+| Prevents collisions across sources | Yes, the URL carries the source's domain | Yes, `source_name` states the source explicitly |
+| Built from | an identifier plus an attribute | identifiers only |
+| Stays the same if a link changes | No | Yes |
+
+**Why B.** A key should be built from what identifies a record, not from what describes it. `source_job_id` identifies the posting; the URL is an attribute of it, and attributes change: a company moves its careers page, a tracking parameter is added. If the URL is part of the key, the key changes with it, so the same posting looks like a new one on the next run, which breaks incremental loads and any history built on the key. `source_name` gives the same cross-source separation the URL domain gives, stated directly and independent of how each source formats its links. This is also the pattern the project guide describes: generate surrogate keys rather than rely on source ids when several sources may reuse the same ids.
+
+**Not measured.** Two source-specific risks of option A were suspected but not tested, so the decision rests on the principle above rather than on them: aggregator links (Jooble, JSearch) may carry query parameters, which would give one posting several URLs; and Workable may share one URL across the city rows of a single shortcode, which would make `shortcode + url` non-unique.
+
+**Naming.** The column is `source_record_sk`: named after what it identifies (a source record) with the `_sk` suffix marking it as a surrogate key. A generic name like `surrogate_key` would collide as soon as two tables are joined, since every table in the star schema will carry its own surrogate key.
+
 ---
 
 ## Current Status: All six sources are complete through the Staging layer
@@ -259,7 +284,7 @@ The instructor's PDF was explicit: **"one model per source, all producing the sa
 **What exactly this step does:**
 1. Select only the shared columns from each model (source-specific columns are set aside for now — they're preserved in staging if we need them later).
 2. Combine them with a single `UNION ALL` → the first time we'll see "every Saudi job posting from every source" in one table.
-3. After that, per the agreed schema plan: apply `ROW_NUMBER() OVER (PARTITION BY source_job_id ORDER BY loaded_at DESC)` to remove duplicates **within the same source** — this is the specific part the instructor's pattern directly covers.
+3. **Within-source duplicates are already removed in staging, not here.** The instructor confirmed the split: keeping them in staging would fail a `unique` test on each model's key, while duplicates of the same job across sources carry different ids and only show up once sources are combined. In practice only Jooble and JSearch needed it (overlapping queries); Ashby, Greenhouse and SmartRecruiters measured zero, and Workable's repeated shortcodes are distinct cities, not copies. `loaded_at` could not have ordered the copies anyway: all 771 Jooble pages share a single `loaded_at` value from one `COPY INTO`, so the envelope's collection time is used instead.
 4. **Cross-source duplicates** (e.g. JSearch republishing Jooble, confirmed via the `job_publisher`/`underlying_source` columns) **remain a separate, later step** — requiring semantic matching, not just `ROW_NUMBER()` — and this has already been documented as an open question worth the mentor's input before we build it.
 
 **In other words:** `int_jobs_unioned` is the first concrete step that implements the instructor's guidance to the letter, and the deduplication steps get built on top of it afterward (within-source first, then cross-source).

@@ -12,20 +12,26 @@ flattened as (
         job.value as job_json
     from source,
     lateral flatten(input => raw_data:jobs) as job
-)
+),
+
+renamed as (
 
 select
     nullif(trim(job_json:shortcode::string), '')                                  as source_job_id,
     'workable'                                                                     as source_name,
     nullif(trim(split_part(split_part(file_name, '/', -1), '.json', 1)), '')       as company_raw,
     nullif(trim(job_json:title::string), '')                                       as title_raw,
+    -- built from city, state and country. Workable has no "region" field (absent on all 1,471 rows),
+    -- the region lives in "state". array_construct_compact drops nulls, so a missing part never
+    -- leaves a stray comma behind.
     nullif(
-        trim(
-            coalesce(nullif(trim(job_json:city::string), ''), '')
-            || case when nullif(trim(job_json:region::string), '') is not null
-                    then ', ' || trim(job_json:region::string) else '' end
-            || case when nullif(trim(job_json:country::string), '') is not null
-                    then ', ' || trim(job_json:country::string) else '' end
+        array_to_string(
+            array_construct_compact(
+                nullif(trim(job_json:city::string), ''),
+                nullif(trim(job_json:state::string), ''),
+                nullif(trim(job_json:country::string), '')
+            ),
+            ', '
         ),
         ''
     )                                                                               as location_raw,
@@ -33,11 +39,10 @@ select
     nullif(trim(job_json:city::string), '')                                        as city_raw,
     nullif(trim(job_json:state::string), '')                                       as region_raw,
     case
-        when job_json:telecommuting::boolean = true  then 'Remote'
-        when job_json:telecommuting::boolean = false then 'OnSite/Hybrid'
+        when job_json:telecommuting::boolean = true then 'Remote'
         else null
-    end                                                                             as workplace_type_raw,
-    nullif(trim(job_json:employment_type::string), '')                             as employment_type,
+    end                                                                             as workplace_type_raw,  -- false does not tell OnSite from Hybrid, so it stays null, same as JSearch
+    {{ normalize_employment_type('job_json:employment_type::string') }}             as employment_type,
     nullif(
         trim(
             coalesce(nullif(trim(job_json:description::string), ''), '')
@@ -58,3 +63,13 @@ select
 
 from flattened
 
+)
+
+select
+    -- surrogate key. Workable returns one object per city for a job posted in several cities, all
+    -- sharing the same shortcode: 1,471 rows, 1,029 shortcodes, 1,471 shortcode + city pairs, and not
+    -- one row identical to another. So a row here is one job in one city, and the city is part of
+    -- the key. None of these rows are duplicates, and none are removed.
+    {{ dbt_utils.generate_surrogate_key(['source_name', 'source_job_id', 'city_raw']) }} as source_record_sk,
+    *
+from renamed

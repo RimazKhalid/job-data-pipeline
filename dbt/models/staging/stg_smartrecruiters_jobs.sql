@@ -13,7 +13,9 @@ flattened as (
     from source,
     -- raw_data here IS the array itself (no "jobs"/"data" wrapper key)
     lateral flatten(input => raw_data) as job
-)
+),
+
+renamed as (
 
 select
     -- shared / common columns (same names, same order as the other staging models)
@@ -34,7 +36,7 @@ select
              and job_json:location.hybrid::boolean = false then 'OnSite'
         else null
     end                                                                            as workplace_type_raw,
-    nullif(trim(job_json:typeOfEmployment.label::string), '')                      as employment_type,
+    {{ normalize_employment_type('job_json:typeOfEmployment.label::string') }}      as employment_type,
     nullif(trim(job_json:jobAd.sections.jobDescription.text::string), '')          as description_plain,
     nullif(trim(job_json:ref::string), '')                                         as job_url,
     nullif(trim(job_json:ref::string), '')                                         as apply_url,
@@ -52,7 +54,15 @@ select
     nullif(trim(job_json:language.code::string), '')                               as language_code,
     nullif(trim(job_json:jobAd.sections.companyDescription.text::string), '')      as company_description_raw,
     nullif(trim(job_json:jobAd.sections.qualifications.text::string), '')          as qualifications_raw,
-    nullif(trim(job_json:jobAd.sections.additionalInformation.text::string), '')   as additional_information_raw
+    nullif(trim(job_json:jobAd.sections.additionalInformation.text::string), '')   as additional_information_raw,
     job_json:customField                                                           as custom_fields_raw
 
 from flattened
+
+)
+
+select
+    -- surrogate key: unique across all six sources, because the same raw id can occur in more than one source
+    {{ dbt_utils.generate_surrogate_key(['source_name', 'source_job_id']) }} as source_record_sk,
+    *
+from renamed

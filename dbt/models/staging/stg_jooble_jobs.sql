@@ -57,7 +57,9 @@ keyed as (
         flattened.*,
         nullif(trim(job_json:id::string), '') as source_job_id
     from flattened
-)
+),
+
+deduped as (
 
 select
     -- shared / common columns (same names, same order as the other staging models)
@@ -98,3 +100,11 @@ qualify row_number() over (
     partition by source_job_id
     order by ingested_at desc, loaded_at desc
 ) = 1
+
+)
+
+select
+    -- surrogate key: unique across all six sources, because the same raw id can occur in more than one source
+    {{ dbt_utils.generate_surrogate_key(['source_name', 'source_job_id']) }} as source_record_sk,
+    *
+from deduped

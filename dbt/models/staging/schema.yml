@@ -1,0 +1,159 @@
+version: 2
+
+# Tests for the staging layer. Nulls pass accepted_values by design: a missing value is a
+# completeness question, handled by not_null only where a value is required.
+
+models:
+  - name: stg_ashby_jobs
+    description: "Ashby postings, one row per posting."
+    columns:
+      - name: source_record_sk
+        description: "Surrogate key: hash of source_name + source_job_id (plus city_raw in Workable). Unique across all six sources."
+        data_tests:
+          - unique
+          - not_null
+      - name: source_job_id
+        data_tests:
+          - not_null
+      - name: ingested_at
+        data_tests:
+          - not_null
+      - name: workplace_type_raw
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Hybrid', 'OnSite']
+      - name: employment_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+
+  - name: stg_greenhouse_jobs
+    description: "Greenhouse postings, one row per posting."
+    columns:
+      - name: source_record_sk
+        description: "Surrogate key: hash of source_name + source_job_id (plus city_raw in Workable). Unique across all six sources."
+        data_tests:
+          - unique
+          - not_null
+      - name: source_job_id
+        data_tests:
+          - not_null
+      - name: ingested_at
+        data_tests:
+          - not_null
+      - name: workplace_type_raw
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Hybrid', 'OnSite']
+      - name: employment_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+
+  - name: stg_smartrecruiters_jobs
+    description: "SmartRecruiters postings, one row per posting."
+    columns:
+      - name: source_record_sk
+        description: "Surrogate key: hash of source_name + source_job_id (plus city_raw in Workable). Unique across all six sources."
+        data_tests:
+          - unique
+          - not_null
+      - name: source_job_id
+        data_tests:
+          - not_null
+      - name: ingested_at
+        data_tests:
+          - not_null
+      - name: workplace_type_raw
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Hybrid', 'OnSite']
+      - name: employment_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+
+  - name: stg_workable_jobs
+    description: "Workable postings, one row per posting per city. A job posted in several cities arrives as one object per city under the same shortcode, so source_job_id repeats by design and is not tested for uniqueness."
+    columns:
+      - name: source_record_sk
+        description: "Surrogate key: hash of source_name + source_job_id (plus city_raw in Workable). Unique across all six sources."
+        data_tests:
+          - unique
+          - not_null
+      - name: source_job_id
+        data_tests:
+          - not_null
+      - name: ingested_at
+        data_tests:
+          - not_null
+      - name: workplace_type_raw
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Hybrid', 'OnSite']
+      - name: employment_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+
+  - name: stg_jooble_jobs
+    description: "Jooble postings, one row per posting. Copies landed by overlapping queries are removed here."
+    columns:
+      - name: source_record_sk
+        description: "Surrogate key: hash of source_name + source_job_id (plus city_raw in Workable). Unique across all six sources."
+        data_tests:
+          - unique
+          - not_null
+      - name: source_job_id
+        description: "Unique here because within-source duplicates are removed in this model."
+        data_tests:
+          - unique
+          - not_null
+      - name: ingested_at
+        data_tests:
+          - not_null
+      - name: workplace_type_raw
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Hybrid', 'OnSite']
+      - name: employment_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+
+  - name: stg_jsearch_jobs
+    description: "JSearch postings, one row per posting, keyed on job_uid. Copies landed by overlapping queries are removed here."
+    columns:
+      - name: source_record_sk
+        description: "Surrogate key: hash of source_name + source_job_id (plus city_raw in Workable). Unique across all six sources."
+        data_tests:
+          - unique
+          - not_null
+      - name: source_job_id
+        description: "Unique here because within-source duplicates are removed in this model."
+        data_tests:
+          - unique
+          - not_null
+      - name: ingested_at
+        data_tests:
+          - not_null
+      - name: workplace_type_raw
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Hybrid', 'OnSite']
+      - name: employment_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']

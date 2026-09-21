@@ -17,11 +17,13 @@ flattened as (
 employment_type_extracted as (
     select
         job_json:id::string as source_job_id,
-        nullif(trim(meta.value:value::string), '') as employment_type
+        {{ normalize_employment_type('meta.value:value::string') }} as employment_type
     from flattened,
     lateral flatten(input => job_json:metadata) as meta
     where meta.value:name::string = 'Employment Type'
-)
+),
+
+renamed as (
 
 select
     -- shared / common columns (same names, same order as the other staging models)
@@ -54,3 +56,13 @@ select
 from flattened f
 left join employment_type_extracted et
     on f.job_json:id::string = et.source_job_id
+
+)
+
+select
+    -- surrogate key: unique across all six sources, because the same raw id can occur in more than one source.
+    -- It also guards the left join above: a posting carrying two "Employment Type" metadata entries would
+    -- produce two rows here, and the unique test on this key is what would catch it.
+    {{ dbt_utils.generate_surrogate_key(['source_name', 'source_job_id']) }} as source_record_sk,
+    *
+from renamed

@@ -24,13 +24,14 @@ clean-targets:         # directories to be removed by `dbt clean`
 
 
 # Configuring models
-# Full documentation: https://docs.getdbt.com/docs/configuring-models
-
-# In this example config, we tell dbt to build all models in the example/
-# directory as views. These settings can be overridden in the individual model
-# files using the `{{ config(...) }}` macro.
+# Staging and intermediate are views: cheap to rebuild, always reflect the latest raw data.
+# Marts are tables: they feed the dashboard, so they are materialised once per run instead of
+# being recomputed on every query.
 models:
   job_pipeline:
-    # Config indicated by + and applies to all files under models/example/
-    example:
+    staging:
       +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table

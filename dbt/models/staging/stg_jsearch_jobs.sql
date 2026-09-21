@@ -57,7 +57,9 @@ keyed as (
         flattened.*,
         nullif(trim(job_json:job_uid::string), '') as source_job_id
     from flattened
-)
+),
+
+deduped as (
 
 select
     -- shared / common columns (same names, same order as the other staging models)
@@ -73,7 +75,7 @@ select
         when job_json:job_is_remote::boolean = true then 'Remote'
         else null
     end                                                                            as workplace_type_raw,  -- false does not distinguish OnSite from Hybrid, so it stays null
-    nullif(trim(job_json:job_employment_type::string), '')                         as employment_type,
+    {{ normalize_employment_type('job_json:job_employment_type::string') }}         as employment_type,
     nullif(trim(job_json:job_description::string), '')                             as description_plain,
     nullif(trim(job_json:job_google_link::string), '')                             as job_url,
     nullif(trim(job_json:job_apply_link::string), '')                              as apply_url,
@@ -101,3 +103,11 @@ qualify row_number() over (
     partition by source_job_id
     order by ingested_at desc, loaded_at desc
 ) = 1
+
+)
+
+select
+    -- surrogate key: unique across all six sources, because the same raw id can occur in more than one source
+    {{ dbt_utils.generate_surrogate_key(['source_name', 'source_job_id']) }} as source_record_sk,
+    *
+from deduped
