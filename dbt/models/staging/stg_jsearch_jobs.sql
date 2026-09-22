@@ -62,7 +62,7 @@ keyed as (
 deduped as (
 
 select
-    -- shared / common columns (same names, same order as the other staging models)
+    --- shared / common columns (same names, same order as the other staging models)
     source_job_id,
     'jsearch'                                                                      as source_name,
     nullif(trim(job_json:employer_name::string), '')                               as company_raw,
@@ -83,7 +83,7 @@ select
 
     ingested_at,                                                                                           -- true collection time of the surviving copy
 
-    -- source-specific columns (unique to JSearch, handled at intermediate stage)
+    -- source-specific columns (unique to JSearch, handled at, intermediate stage)
     nullif(trim(job_json:job_publisher::string), '')                               as job_publisher,       -- "Jooble" appears here, confirming the two sources partially feed each other
     nullif(trim(job_json:job_id::string), '')                                      as job_id,              -- per-request id of the surviving copy, kept for traceability only, never a key
     nullif(trim(job_json:job_salary_string::string), '')                           as salary_raw,          -- the field exists on every record but is empty in all 3,089 rows collected
