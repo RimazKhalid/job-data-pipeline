@@ -1,7 +1,23 @@
 -- models/staging/stg_greenhouse_jobs.sql
+--
+-- Grain: one row per Greenhouse posting (source_job_id). Latest snapshot wins.
+--
+-- v2 changes:
+--   1. ingest_date from the landing path; ingested_at = that date at midnight UTC.
+--   2. Dedup across snapshots and across boards. Umbrella boards (e.g. cssmerge) can list the
+--      same posting as a brand's own board (pronto, kitchenpark, namaa), under the same id.
+--   3. Metadata (Employment Type, Brand) extracted per file + job, aggregated to one row.
+--      The v1 LEFT JOIN on job id alone would fan out once a second snapshot is loaded.
+--   4. company_raw: "Careers page" suffix removed ("ATOMS Careers page" -> "ATOMS").
+--      Brand from metadata kept separately as brand_raw; which one wins is decided in intermediate.
+--   5. Timestamps converted to UTC. Greenhouse returns local offsets (-04:00), not UTC.
 
 with source as (
-    select raw_data, file_name, loaded_at
+    select
+        raw_data,
+        file_name,
+        loaded_at,
+        {{ ingest_date_from_path('file_name') }} as ingest_date
     from {{ source('raw', 'raw_greenhouse') }}
 ),
 
@@ -9,60 +25,76 @@ flattened as (
     select
         file_name,
         loaded_at,
+        ingest_date,
         job.value as job_json
     from source,
     lateral flatten(input => raw_data:jobs) as job
 ),
 
-employment_type_extracted as (
+metadata_extracted as (
     select
-        job_json:id::string as source_job_id,
-        {{ normalize_employment_type('meta.value:value::string') }} as employment_type
-    from flattened,
-    lateral flatten(input => job_json:metadata) as meta
-    where meta.value:name::string = 'Employment Type'
+        f.file_name,
+        f.job_json:id::string as job_id,
+        max(case when meta.value:name::string = 'Employment Type' then meta.value:value::string end) as employment_type_value,
+        max(case when meta.value:name::string = 'Brand'           then meta.value:value::string end) as brand_value
+    from flattened f,
+    lateral flatten(input => f.job_json:metadata, outer => true) as meta
+    group by 1, 2
 ),
 
 renamed as (
+    select
+        nullif(trim(f.job_json:id::string), '')                                        as source_job_id,
+        'greenhouse'                                                                    as source_name,
+        nullif(trim(regexp_replace(f.job_json:company_name::string,
+                                   '\\s*careers\\s*page\\s*$', '', 1, 1, 'i')), '')      as company_raw,
+        nullif(trim(f.job_json:title::string), '')                                      as title_raw,
+        nullif(trim(f.job_json:location.name::string), '')                              as location_raw,
+        null::string                                                                    as country_raw,   -- one flat location string only
+        null::string                                                                    as city_raw,
+        null::string                                                                    as region_raw,
+        null::string                                                                    as workplace_type_raw,  -- no remote/onsite signal in the payload
+        {{ normalize_employment_type('m.employment_type_value') }}                       as employment_type,
+        -- HTML with escaped entities (&lt;p&gt;), decoded and stripped in intermediate
+        nullif(trim(f.job_json:content::string), '')                                    as description_plain,
+        nullif(trim(f.job_json:absolute_url::string), '')                               as job_url,
+        nullif(trim(f.job_json:absolute_url::string), '')                               as apply_url,
+        convert_timezone('UTC', f.job_json:first_published::timestamp_tz)               as posting_date_raw,
+        {{ date_to_utc_timestamp('f.ingest_date') }}                                    as ingested_at,
 
-select
-    -- shared / common columns (same names, same order as the other staging models)
-    nullif(trim(f.job_json:id::string), '')                                       as source_job_id,
-    'greenhouse'                                                                   as source_name,
-    nullif(trim(f.job_json:company_name::string), '')                             as company_raw,
-    nullif(trim(f.job_json:title::string), '')                                     as title_raw,
-    nullif(trim(f.job_json:location.name::string), '')                             as location_raw,
-    null::string                                                                   as country_raw,   -- Greenhouse gives one flat location string, no structured breakdown
-    null::string                                                                   as city_raw,
-    null::string                                                                   as region_raw,
-    null::string                                                                   as workplace_type_raw,  -- no remote/onsite signal found in this payload — consistent with the unified vocabulary (null, not a guessed value)
-    et.employment_type,
-    -- content is raw HTML with escaped entities (&lt;p&gt; instead of <p>) — left as-is here,
-    -- deliberately NOT unescaped or stripped at staging
-    nullif(trim(f.job_json:content::string), '')                                   as description_plain,
-    nullif(trim(f.job_json:absolute_url::string), '')                              as job_url,
-    nullif(trim(f.job_json:absolute_url::string), '')                              as apply_url,
-    f.job_json:first_published::timestamp_tz                                       as posting_date_raw,   -- already timestamp_tz — consistent with the other five sources, no change needed
+        -- source-specific
+        nullif(trim(split_part(split_part(f.file_name, '/', -1), '.json', 1)), '')      as board_slug,
+        nullif(trim(m.brand_value), '')                                                 as brand_raw,
+        convert_timezone('UTC', f.job_json:updated_at::timestamp_tz)                    as updated_at_raw,
+        nullif(trim(f.job_json:requisition_id::string), '')                             as requisition_id,
+        nullif(trim(f.job_json:departments[0].name::string), '')                        as department,
+        nullif(trim(f.job_json:offices[0].name::string), '')                            as office_name,
 
-    -- needed for dedup (ROW_NUMBER) at the intermediate stage — pulled from RAW
-    f.loaded_at                                                                     as ingested_at,
+        -- lineage
+        f.ingest_date,
+        f.loaded_at,
+        f.file_name
+    from flattened f
+    left join metadata_extracted m
+        on  f.file_name          = m.file_name
+        and f.job_json:id::string = m.job_id
+),
 
-    -- source-specific columns (unique to Greenhouse, handled at intermediate stage)
-    f.job_json:updated_at::timestamp_tz                                            as updated_at_raw,
-    nullif(trim(f.job_json:requisition_id::string), '')                            as requisition_id,
-    nullif(trim(f.job_json:departments[0].name::string), '')                       as department,
-    nullif(trim(f.job_json:offices[0].name::string), '')                           as office_name
-
-from flattened f
-left join employment_type_extracted et
-    on f.job_json:id::string = et.source_job_id
-
+deduped as (
+    select
+        *,
+        min(ingested_at) over (partition by source_job_id) as first_seen_at,
+        max(ingested_at) over (partition by source_job_id) as last_seen_at,
+        max(ingest_date) over ()                           as latest_source_ingest_date
+    from renamed
+    qualify row_number() over (
+        partition by source_job_id
+        order by ingest_date desc, loaded_at desc, file_name
+    ) = 1
 )
 
 select
-    -- surrogate key: unique across all six sources, because the same raw id can occur in more than one source.
-    -- It also guards the left join above: a posting carrying two "Employment Type" metadata entries would
-    -- produce two rows here, and the unique test on this key is what would catch it.
     {{ dbt_utils.generate_surrogate_key(['source_name', 'source_job_id']) }} as source_record_sk,
-    *
-from renamed
+    * exclude (latest_source_ingest_date),
+    (ingest_date = latest_source_ingest_date) as is_active
+from deduped

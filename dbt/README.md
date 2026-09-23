@@ -1,193 +1,185 @@
-# Staging Layer — README
+# dbt project — Job Market Data Pipeline
 
-## Goal of the Staging Layer
+The transformation layer of the pipeline (ELT). Raw job postings land in Snowflake untouched;
+everything in this folder turns them into a clean, tested, analysis-ready dataset.
 
-We take each raw source exactly as it landed in Snowflake, and turn it into a clean table with standardized column names and converted data types — without dropping any column, even ones unique to a single source. The shared columns are identical across all six models, so they can be combined later. Source-specific columns stay in staging, and we decide what to do with them later.
+```
+RAW (Snowflake)  →  staging  →  intermediate  →  marts
+6 VARIANT tables    6 views      listings +        
+                                 cross-source      
+                                 matching
+```
+
+
+
+## How to run
+
+```powershell
+py -m dbt.cli.main deps                  # installs dbt_utils
+py -m dbt.cli.main seed                  # loads the two seed files into Snowflake
+py -m dbt.cli.main build                 # runs every model and every test, in dependency order
+```
+
+Useful selections:
+
+```powershell
+py -m dbt.cli.main build --select staging
+py -m dbt.cli.main build --select int_job_listings+     # a model and everything downstream of it
+py -m dbt.cli.main docs generate
+py -m dbt.cli.main docs serve                          # lineage graph
+```
 
 ---
 
-## Shared Columns (same name across all six tables)
+## Staging layer
+
+### Goal
+
+Take each raw source exactly as it landed and produce a clean table with standardized column
+names, converted types, and **no within-source duplicates** — without dropping any column that
+might be useful later. The shared columns are identical across all six models so they can be
+combined in intermediate. Source-specific columns stay in staging.
+
+Staging does not join sources and applies no business rules. The one filter it applies is the
+geographic scope (Saudi Arabia) on Ashby, where the extraction keyword filter let a non-Saudi
+posting through.
+
+### Shared columns (all six models)
 
 | Column | Type | Description |
 |---|---|---|
-| `source_record_sk` | STRING | Surrogate key, unique across all sources combined — see below |
-| `source_job_id` | STRING | The job's own stable identifier from that source |
-| `source_name` | STRING | Fixed source name (`'ashby'`, `'workable'`...) |
+| `source_record_sk` | STRING | Surrogate key, unique across all sources combined |
+| `source_job_id` | STRING | The job's stable identifier within its source |
+| `source_name` | STRING | `'ashby'`, `'workable'`, `'greenhouse'`, `'smartrecruiters'`, `'jooble'`, `'jsearch'` |
 | `company_raw` | STRING | Company name as given by the source |
 | `title_raw` | STRING | Job title |
-| `location_raw` | STRING | Location as a single line of text, where the source gives it that way |
-| `country_raw` | STRING | Country, where given separately |
-| `city_raw` | STRING | City, where given separately |
-| `region_raw` | STRING | Region/province, where given separately |
-| `workplace_type_raw` | STRING | `Remote` / `Hybrid` / `OnSite` / `null` — one shared vocabulary across all sources |
-| `employment_type` | STRING | Normalized via `normalize_employment_type()` — see below |
-| `description_plain` | STRING | Job description as plain text |
-| `job_url` | STRING | Job posting URL |
-| `apply_url` | STRING | Application URL |
-| `posting_date_raw` | TIMESTAMP_TZ | Posting date — left null where the source has no trustworthy publish date |
-| `ingested_at` | TIMESTAMP_TZ | When this specific record was collected |
+| `location_raw` | STRING | Location as one line of text |
+| `country_raw` / `city_raw` / `region_raw` | STRING | Structured location, where the source provides it |
+| `workplace_type_raw` | STRING | `Remote` / `Hybrid` / `OnSite` / null — one vocabulary across sources |
+| `employment_type` | STRING | Normalized by `normalize_employment_type()` |
+| `description_plain` | STRING | Job description. **Plain text for Ashby / JSearch / Jooble; HTML for Workable / Greenhouse / SmartRecruiters** — stripped in intermediate |
+| `job_url` / `apply_url` | STRING | Posting page and application page |
+| `posting_date_raw` | TIMESTAMP_TZ (UTC) | Publish date; null where the source has no trustworthy one |
+| `ingested_at` | TIMESTAMP_TZ (UTC) | When the record was collected — see below |
+| `first_seen_at` / `last_seen_at` | TIMESTAMP_TZ (UTC) | Observation window across every landed copy |
+
+ATS models (Ashby, Workable, Greenhouse, SmartRecruiters) also carry `ingest_date`,
+`is_active`, `loaded_at`, and `file_name`. Jooble and JSearch carry `batch_id` and `http_status`.
+
+### What `ingested_at` means per source
+
+| Sources | `ingested_at` | Why |
+|---|---|---|
+| Jooble, JSearch | Collection timestamp recorded in each page's envelope | Exact per page. `loaded_at` is shared by a whole `COPY INTO` batch and cannot order copies |
+| Ashby, Workable, Greenhouse, SmartRecruiters | `ingest_date` from the landing path, at midnight UTC | ATS files carry no collection timestamp. `loaded_at` is TIMESTAMP_NTZ in the Snowflake session time zone and records load time, not collection time |
+
+`ingest_date` is read from the ADLS path by the `ingest_date_from_path()` macro:
+`ashby/ingest_date=2026-09-16/alan.json` → `2026-09-16`.
 
 ### Surrogate key
 
-Every model outputs `source_record_sk`, built with `dbt_utils.generate_surrogate_key()`. Job IDs are only unique within their own source, so this key combines `source_name` + `source_job_id` (plus `city_raw` for Workable specifically — see below) so identical raw IDs from different sources never collide once the models are combined.
+`dbt_utils.generate_surrogate_key()` over `source_name` + `source_job_id` (plus `city_raw` for
+Workable — see below). Job IDs are only unique within their own source, so the source name
+prevents collisions once the models are combined.
 
 ### Employment type normalization
 
-`normalize_employment_type()` (in `macros/normalize_employment_type.sql`) reconciles the different spellings each source uses for the same employment type (`FullTime`/`Full-time`, `PartTime`/`Part-time`, `Intern`/`Internship`, `Contract`/`Contractor`) into one consistent set of accepted values, applied identically across every model that has this column.
+`normalize_employment_type()` reconciles each source's spelling (`FullTime` / `Full-time`,
+`Intern` / `Internship`, `Contract` / `Contractor`…) into one vocabulary. An unrecognized value
+passes through unchanged rather than becoming null, so the `accepted_values` test fails and a new
+spelling gets noticed instead of silently disappearing.
 
----
+### Two kinds of duplication
 
-## Two Kinds of Duplication
+1. **Within-source duplication — handled in staging.** The same posting, under the same source
+   ID, landed more than once.
+   - **Jooble / JSearch:** overlapping queries return the same posting many times.
+   - **ATS sources:** the same posting appears in every `ingest_date` snapshot while it stays open.
 
-This pipeline deals with two structurally different kinds of duplicate records, handled at two different layers:
+   Every model keeps the most recent copy
+   (`qualify row_number() over (partition by <key> order by <collection time> desc …) = 1`) and
+   computes `first_seen_at` / `last_seen_at` *before* dropping the older copies, since staging is
+   the last layer where every copy still exists.
 
-1. **Within-source duplication** (handled in Staging): the same posting, under the same source ID, landed multiple times because of how coverage was collected — overlapping queries for Jooble and JSearch (query-scoped sources, capped per request), and a shared `loaded_at` across an entire `COPY INTO` batch. Both `stg_jooble_jobs` and `stg_jsearch_jobs`:
-   - filter to `http_status = 200` before parsing
-   - use `try_parse_json` instead of `parse_json`, so one malformed page returns null instead of failing the whole run
-   - pull `ingested_at` from each page's own envelope, not from `loaded_at` (which is identical for an entire load batch and can't order individual copies)
-   - keep only the most recently collected copy of each posting: `qualify row_number() over (partition by source_job_id order by ingested_at desc, loaded_at desc) = 1`
-   - compute `first_seen_at` / `last_seen_at` (min/max `ingested_at` per posting) *before* the duplicate copies are dropped, since staging is the last layer where every landed copy still exists
+2. **Cross-source duplication — handled in intermediate.** The same real job published on
+   different sources under different IDs. IDs cannot resolve this; it needs normalized matching
+   on title, company and city. Specified in [`docs/data_model.md`](docs/data_model.md#8-cross-source-matching-specification).
 
-2. **Cross-source duplication** (handled in Intermediate): the same real-world job posting appearing under different sources with different IDs entirely — e.g. JSearch republishing a Jooble listing (visible via `job_publisher` reading "Jooble" on some JSearch rows). This can't be resolved by comparing IDs; it needs semantic matching (title, company, location, date) and is deferred to the `int_jobs_unioned` stage.
----
+### `is_active` (ATS models)
 
-## `stg_ashby_jobs`
+An ATS file is a full snapshot of a company's open jobs. A posting present in the most recent
+snapshot of its source is active; one that has disappeared has been closed. This is how the
+pipeline detects **outdated records**. It becomes meaningful from the second snapshot onward.
 
-**Raw shape:** one row per file (company), containing a `jobs` array — we use `LATERAL FLATTEN` to unnest it into one row per job.
+### Per-model notes
 
-**Raw shape:** one row per file (company), containing a `jobs` array — `LATERAL FLATTEN` unnests it into one row per job.
+**`stg_ashby_jobs`** — one file per company with a `jobs` array.
+- Scope filter on `address.postalAddress.addressCountry = 'Saudi Arabia'`, with a keyword fallback
+  when the field is missing. The extraction keyword filter matched `"hail"` inside
+  `"Thailand (Remote)"`; this filter removes that posting.
+- Ashby's API returns no company name, so `company_raw` is the board slug from the file name.
+- `department` / `team` are unreliable: some companies put their own name there.
+- `secondary_locations_raw` kept for reference.
 
-### Ashby-specific columns
-| Column | Type | Why |
-|---|---|---|
-| `department` | STRING | Present, but not reliable across companies — some put the company name here instead of a real department |
-| `team` | STRING | Same reliability caveat |
-| `is_remote` | BOOLEAN | Separate from `workplaceType`, kept as extra signal |
+**`stg_workable_jobs`** — one file per company with a `jobs` array.
+- Grain is **one row per posting per city**. A role open in several cities arrives as one object
+  per city under the same `shortcode` (1,471 rows, 1,029 shortcodes, 1,471 shortcode + city pairs),
+  so `city_raw` is part of the key and nothing is dropped.
+- `company_raw` from the payload's own `name` field (e.g. `"Qiddiya Investment Company"`); the
+  file-name slug is kept as `board_slug`.
+- `apply_url` from `application_url`, the real application page.
+- `region_raw` reads Workable's `state` field, which holds the region (e.g. `"Makkah Province"`).
+- `workplace_type_raw` is `'Remote'` when `telecommuting = true`, otherwise null — Workable cannot
+  distinguish Hybrid from OnSite.
+- `posting_date_raw`: `published_on` (date only), falling back to `created_at`, at midnight UTC.
+- Added `department`, `job_function`, `industry`, `education`.
 
+**`stg_greenhouse_jobs`** — one file per board with a `jobs` array (17 boards).
+- Deduplicated across snapshots **and across boards**: an umbrella board (`cssmerge`) can list the
+  same posting as a brand's own board (`pronto`, `kitchenpark`, `namaa`) under the same ID.
+- Metadata (`Employment Type`, `Brand`) is extracted per file + job and aggregated to one row, so
+  the join cannot fan out when more snapshots are loaded.
+- `company_raw` has the `"Careers page"` suffix removed (`"ATOMS Careers page"` → `"ATOMS"`).
+  `brand_raw` is kept separately; intermediate prefers the brand.
+- Timestamps converted to UTC — Greenhouse returns local offsets (`-04:00`), not UTC.
+- `posting_date_raw` uses `first_published`; `updated_at` mostly reflects the last sync time.
+- No structured city / country and no remote signal in the payload.
 
----
+**`stg_smartrecruiters_jobs`** — the file is a JSON array directly (no wrapper key).
+- `job_url` / `apply_url` built as `https://jobs.smartrecruiters.com/<company.identifier>/<id>`.
+  The raw `ref` field is an API endpoint, not a page a person can open; it is kept as `api_ref_url`.
+- `location_raw` cleaned of empty parts (`"Riyadh, , Saudi Arabia"` → `"Riyadh, Saudi Arabia"`);
+  `country_raw` upper-cased (`sa` → `SA`).
+- The only source with separate `remote` and `hybrid` flags, so all three workplace types are distinguishable.
+- Descriptive sections (`companyDescription`, `qualifications`, `additionalInformation`) kept as separate columns.
 
-## `stg_workable_jobs`
+**`stg_jsearch_jobs`** — envelope per query page; jobs inside `response_raw` (escaped JSON string), array key `data`.
+- `source_job_id` is `job_uid`, not `job_id`. `job_id` is base64 of `job_uid` plus a token that
+  changes on every request (42 `job_uid`s map to more than one `job_id`); kept for traceability only.
+- Only HTTP 200 pages parsed; `try_parse_json` so a malformed page yields null instead of failing the run.
+- `job_city` is inconsistent (Arabic, transliteration, airport codes); standardized in intermediate.
+- `posting_date_raw` never filled from the relative text (`"27 days ago"`).
+- `job_publisher` kept: it sometimes names the original source (e.g. Jooble).
 
-**Raw shape:** same idea as Ashby — `LATERAL FLATTEN` on the `jobs` array.
+**`stg_jooble_jobs`** — same envelope pattern, array key `jobs`.
+- `description_plain` is a snippet, not the full description.
+- `posting_date_raw` deliberately null: `updated` is a crawl timestamp, kept as `crawled_at`.
+- No structured location and no remote / employment-type signal.
+- `underlying_source` kept (e.g. `smartrecruiters.com`) — evidence for cross-source matching.
 
-### Workable-specific columns
-| Column | Type | Why |
-|---|---|---|
-| `telecommuting` | BOOLEAN | The raw signal `workplace_type_raw` is derived from |
-| `experience` | STRING | Required experience level, if present |
-| `locations_raw` | VARIANT | Raw location array, kept for reference |
+### Data quality results — RAW to staging
 
-### Postings across multiple cities
+Snapshot of 2026-09-23 (one snapshot per ATS source):
 
-Workable postings open in multiple cities show up in two different patterns: some get a distinct `shortcode` per city, while others share a single `shortcode` across several cities (verified directly against the data — several `source_job_id` values map to more than one `city_raw`, e.g. one job appearing across 4 distinct cities under the same code). The surrogate key accounts for both patterns by including `city_raw` in its composition (`source_name` + `source_job_id` + `city_raw`), so every city a role is posted in is preserved as its own row, with no collisions and nothing dropped.
-
-### Notes
-- `location_raw` is built from `city` / `state` / `country`, skipping any part that's missing, using `array_construct_compact` + `array_to_string` — this avoids a stray leading/trailing comma when a part is absent.
-- `region_raw` reads from Workable's `state` field (a region name, e.g. "Makkah Province"), not a field literally called `region` — Workable has no field by that name.
-- `workplace_type_raw` is `'Remote'` when `telecommuting = true`, otherwise `null` — Workable's data can't distinguish Hybrid from OnSite, so no compound value is guessed.
-- `description_plain` combines `description` and `full_description`; if both are empty the result is a genuine `NULL`, not a stray space.
-
----
-
-## `stg_jsearch_jobs`
-
-**Raw shape:** the file is an envelope for one query page, with the actual data inside `response_raw` as an escaped JSON string. The jobs array is `data`.
-
-### Identity field
-
-`source_job_id` is built from `job_uid`, not `job_id`. `job_id` is a base64 encoding of `job_uid` plus a token that changes on every request, so the same posting returns a different `job_id` each time it's fetched — `job_uid` is JSearch's stable identifier (confirmed: multiple `job_uid` values in the raw data map to more than one `job_id`, with identical title, company, city, and publisher). `job_id` is still kept as a separate column for traceability, but never used as a key.
-
-### JSearch-specific columns
-| Column | Type | Why |
-|---|---|---|
-| `job_publisher` | STRING | The actual ad publisher — useful for cross-source duplicate detection at the intermediate stage |
-| `job_id` | STRING | Per-request ID of the surviving copy, kept for traceability only |
-| `salary_raw` | STRING | From `job_salary_string`; present as a field on every record but empty in the data collected so far |
-| `first_seen_at` / `last_seen_at` | TIMESTAMP_TZ | Observation window across every landed copy of a posting — see "Two Kinds of Duplication" above |
-
-### Notes
-- `job_city` is inconsistent across records — Arabic, transliteration, and airport codes can all represent the same city; left as-is here, standardization happens later.
-- `workplace_type_raw` is `'Remote'` when `job_is_remote = true`, otherwise `null` — `false` doesn't distinguish OnSite from Hybrid.
-- `posting_date_raw` is left null when `job_posted_at_datetime_utc` is absent — never filled from the relative text field `job_posted_at` (e.g. "27 days ago").
-
----
-
-## `stg_jooble_jobs`
-
-**Raw shape:** same envelope pattern as JSearch, but the array key is `jobs`, not `data`.
-
-### Jooble-specific columns
-| Column | Type | Why |
-|---|---|---|
-| `underlying_source` | STRING | Jooble's own aggregator signal (e.g. "teamtailor.com"), the equivalent of JSearch's `job_publisher` |
-| `salary_raw` | STRING | Salary text as given, mostly blank |
-| `crawled_at` | TIMESTAMP_TZ | Kept for reference only, never used as `posting_date_raw` |
-| `first_seen_at` / `last_seen_at` | TIMESTAMP_TZ | Same observation window as JSearch |
-
-### Notes
-- `country_raw` / `city_raw` / `region_raw` are always null — Jooble gives location as a single text line only (`location_raw`), with no structured breakdown.
-- `workplace_type_raw` is always null — Jooble gives no remote/onsite signal at all.
-- `posting_date_raw` is deliberately and permanently null — Jooble's `updated` field is a crawl timestamp, not a publish date.
-
----
-
-## `stg_smartrecruiters_jobs` (v3 — description added)
-
-
-**Raw shape:** the file is a JSON array directly (no `jobs`/`data` wrapper key).
-
-### SmartRecruiters-specific columns
-| Column | Type | Why |
-|---|---|---|
-| `requisition_ref` | STRING | The company's internal requisition reference |
-| `industry_label` | STRING | Industry classification |
-| `function_label` | STRING | Job function classification |
-| `experience_level` | STRING | Seniority level |
-| `visibility` | STRING | Posting visibility flag |
-| `language_code` | STRING | Language the posting was written in |
-| `company_description_raw` | STRING | The "about us" section of the job ad |
-| `qualifications_raw` | STRING | The qualifications section |
-| `additional_information_raw` | STRING | Often empty — an empty string, not null, on many records |
-| `custom_fields_raw` | VARIANT | Company-defined custom fields, kept whole and unparsed for reference — not standardized across companies, so not broken out into individual columns |
-
-### Notes
-- `location` is the richest object of any source — `city`, `region`, `country`, `remote`, `hybrid`, `fullLocation` — the only source where `remote` and `hybrid` are separate explicit flags, so `workplace_type_raw` here can distinguish all three states precisely.
-- `description_plain` maps to `jobAd.sections.jobDescription.text` specifically; the other three sections (`companyDescription`, `qualifications`, `additionalInformation`) are kept as separate source-specific columns rather than concatenated together.
-- All descriptive text is kept as raw HTML — no unescaping happens at this stage.
-
-
----
-
-## `stg_greenhouse_jobs`
-
-**Raw shape:** one row per file (company), containing a `jobs` array.
-
-### Greenhouse-specific columns
-| Column | Type | Why |
-|---|---|---|
-| `updated_at_raw` | TIMESTAMP_TZ | Last-updated timestamp — not used as the posting date |
-| `requisition_id` | STRING | The company's internal requisition ID |
-| `department` | STRING | Same reliability caveat as Ashby's `department` |
-| `office_name` | STRING | Office name as the company labels it |
-
-### Notes
-- `Employment Type` is pulled out of the `metadata` array (an item with `name = "Employment Type"`), via a second `LATERAL FLATTEN` + filter + `LEFT JOIN`, since it isn't a direct top-level field.
-- `content` is kept fully raw, including escaped HTML — no unescaping at this stage.
-- `posting_date_raw` uses `first_published` rather than `updated_at` — `updated_at` was found to be nearly identical across every record in a sample, suggesting it mostly reflects the last sync time rather than a date genuinely tied to each job.
-- `country_raw`, `city_raw`, `region_raw`, and `workplace_type_raw` are always null — Greenhouse's `location` object only ever contains a single `name` field (e.g. "Riyadh, Saudi Arabia"), with no structured breakdown, and no remote/hybrid/onsite signal exists anywhere in the payload.
-
-
----
-
-## General Lessons Learned (useful for anyone building a new staging model later)
-
-1. **Never assume a field's name or absence without checking a real raw sample first.** Happened three times (Workable location fields, Workable employment_type, Greenhouse's Employment Type buried inside metadata).
-2. **Review `IFF`/`CASE` logic carefully when handling a boolean that could be `false` or `null`** — `false` and `null` are completely different, and a small logic error here can silently turn valid data into null.
-3. **Null in a given column isn't always a problem** — you need to know whether it's (a) a genuine absence in the source, (b) a deliberate design decision (e.g. `posting_date_raw` for Jooble), or (c) a bug in the extraction logic. Document each case clearly where it occurs.
-4. **JSON array names differ between sources even when the overall shape looks similar** (`jobs` for Ashby/Workable/Jooble/Greenhouse, but `data` for JSearch) — verify the name for every new source, never assume it.
-5. **Any new RAW table must be registered in `sources.yml` before any staging model can use it** — forgetting this produces a clear compilation error that's easy to fix.
-6. **If a query result looks strange (everything suddenly null), check a raw sample directly first** before assuming a bug in the model's logic — sometimes the issue is the query itself (a stale run, a mistaken execution), not the code.
+| Source | RAW rows | Staging rows | Removed | Reason |
+|---|---|---|---|---|
+| Ashby | 47 | 46 | 1 | Non-Saudi posting (`"Thailand (Remote)"`) |
+| Greenhouse | 186 | 186 | 0 | |
+| SmartRecruiters | 908 | 908 | 0 | |
+| Workable | 1,471 | 1,471 | 0 | |
+| Jooble | 14,010 | 8,262 | 5,748 | Copies from overlapping queries |
+| JSearch | 3,089 | 1,924 | 1,165 | Copies from overlapping `date_posted` windows |
+| **Total** | **19,711** | **12,797** | **6,914** | |
 
 ---
 
@@ -195,18 +187,6 @@ Workable postings open in multiple cities show up in two different patterns: som
 
 `models/staging/schema.yml` defines `unique`, `not_null`, and `accepted_values` tests across all six staging models — verifying `source_record_sk` uniqueness and non-null status, and that `employment_type` / `workplace_type_raw` only contain values from their defined vocabulary. `dbt_project.yml` materializes staging and intermediate models as views, and marts as tables.
 
----
-
-## General Lessons Learned
-
-1. Never assume a field's name or absence without checking a real raw sample first.
-2. Review boolean-to-string logic carefully — `false` and `null` are different, and a small logic error can silently turn valid data into null.
-3. Null in a column isn't always a problem — know whether it's a genuine absence in the source, a deliberate design decision, or a bug, and document which.
-4. JSON array names differ between sources even when the shape looks similar (`jobs` for most, `data` for JSearch) — verify per source, never assume.
-5. Any new RAW table must be registered in `sources.yml` before any staging model can use it.
-6. If a query result looks strange, check a raw sample directly before assuming a bug in the model's logic.
-7. Any teammate running this project needs the `JOB_PIPELINE_DEV` Snowflake role explicitly granted to their user, and their local `profiles.yml` must reference that role by name — the default role on a new user is not automatically the shared one.
-8. Config files with no visible merge conflict (e.g. `packages.yml`, `schema.yml`) can still be silently dropped during a branch merge if one side lacks them entirely — after any merge, run `dbt deps` and `dbt test` (not just `dbt run`) to confirm nothing went missing, since `dbt run` alone won't reveal a missing test config.
 
 ---
 
