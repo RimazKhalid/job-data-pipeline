@@ -1,0 +1,22 @@
+﻿# secrets
+.env
+
+# raw landing zones (never commit raw data)
+raw/
+adls_upload/
+**/Data Sample/
+*_seen_ids.json
+query_log.csv
+# greenhouse.py writes <board>_jobs.json into the folder it runs from
+/*_jobs.json
+pipeline/**/*_jobs.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# dbt
+dbt/target/
+dbt/logs/
+dbt/dbt_packages/
