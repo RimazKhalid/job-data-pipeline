@@ -45,7 +45,7 @@ models:
         data_tests:
           - not_null
       - name: is_active
-        description: "True when the posting is present in the most recent snapshot of this source. A posting missing from the latest snapshot has been closed."
+        description: "True when the posting appears in the latest pull of the board it came from (for Greenhouse, of any board that listed it). A posting missing from its board's latest pull has been closed. A board that was not pulled again keeps its postings' last known state, so a partial pull never marks unchecked boards as closed."
         data_tests:
           - not_null
       - name: country_raw
@@ -94,7 +94,7 @@ models:
         data_tests:
           - not_null
       - name: is_active
-        description: "True when the posting is present in the most recent snapshot of this source. A posting missing from the latest snapshot has been closed."
+        description: "True when the posting appears in the latest pull of the board it came from (for Greenhouse, of any board that listed it). A posting missing from its board's latest pull has been closed. A board that was not pulled again keeps its postings' last known state, so a partial pull never marks unchecked boards as closed."
         data_tests:
           - not_null
 
@@ -137,7 +137,7 @@ models:
         data_tests:
           - not_null
       - name: is_active
-        description: "True when the posting is present in the most recent snapshot of this source. A posting missing from the latest snapshot has been closed."
+        description: "True when the posting appears in the latest pull of the board it came from (for Greenhouse, of any board that listed it). A posting missing from its board's latest pull has been closed. A board that was not pulled again keeps its postings' last known state, so a partial pull never marks unchecked boards as closed."
         data_tests:
           - not_null
       - name: country_raw
@@ -191,7 +191,7 @@ models:
         data_tests:
           - not_null
       - name: is_active
-        description: "True when the posting is present in the most recent snapshot of this source. A posting missing from the latest snapshot has been closed."
+        description: "True when the posting appears in the latest pull of the board it came from (for Greenhouse, of any board that listed it). A posting missing from its board's latest pull has been closed. A board that was not pulled again keeps its postings' last known state, so a partial pull never marks unchecked boards as closed."
         data_tests:
           - not_null
       - name: country_raw
