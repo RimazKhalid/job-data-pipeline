@@ -11,6 +11,14 @@
 --   4. company_raw: "Careers page" suffix removed ("ATOMS Careers page" -> "ATOMS").
 --      Brand from metadata kept separately as brand_raw; which one wins is decided in intermediate.
 --   5. Timestamps converted to UTC. Greenhouse returns local offsets (-04:00), not UTC.
+--   6. is_active per board, not per source: a posting is active when any copy of it sits in the
+--      latest pull of its own board. Boards not re-pulled keep their postings open.
+--   7. Geographic scope enforced here. Greenhouse has no structured country field, so the Saudi
+--      keywords of the extraction script are matched against the location text. The files landed
+--      on 2026-09-09 were not filtered at extraction and carried postings in Dubai, Cairo and other
+--      non-Saudi cities; without this filter they looked like "closed" postings once the filtered
+--      2026-09-24 pull no longer listed them.
+--   8. board_slug read with board_from_path(), so "hala.json" and "hala_jobs.json" are one board.
 
 with source as (
     select
@@ -70,7 +78,7 @@ renamed as (
         {{ date_to_utc_timestamp('f.ingest_date') }}                                    as ingested_at,
 
         -- source-specific
-        nullif(trim(split_part(split_part(f.file_name, '/', -1), '.json', 1)), '')      as board_slug,
+        {{ board_from_path('f.file_name') }}                                            as board_slug,
         nullif(trim(m.brand_value), '')                                                 as brand_raw,
         convert_timezone('UTC', f.job_json:updated_at::timestamp_tz)                    as updated_at_raw,
         nullif(trim(f.job_json:requisition_id::string), '')                             as requisition_id,
@@ -88,6 +96,19 @@ renamed as (
         and f.job_json:id::string = m.job_id
 ),
 
+scoped as (
+    -- same keyword list as pipeline/ingestion/greenhouse/greenhouse.py; applied before dedup so
+    -- first_seen_at / last_seen_at / is_active are computed over in-scope copies only
+    select *
+    from renamed
+    where location_raw ilike any (
+        '%saudi%', '%ksa%', '%riyadh%', '%jeddah%', '%dammam%', '%khobar%', '%dhahran%',
+        '%jubail%', '%mecca%', '%makkah%', '%medina%', '%madinah%', '%jazan%', '%jizan%',
+        '%tabuk%', '%abha%', '%taif%', '%yanbu%', '%al ahsa%', '%hofuf%', '%neom%',
+        '%king abdullah economic city%', '%eastern province%', '%western province%'
+    )
+),
+
 deduped as (
     select
         *,
@@ -97,7 +118,7 @@ deduped as (
         -- against the latest date of the whole source would mark every board that was not
         -- re-pulled as closed
         max(iff(ingest_date = board_latest_pull, 1, 0)) over (partition by source_job_id) = 1 as is_active
-    from renamed
+    from scoped
     qualify row_number() over (
         partition by source_job_id
         order by ingest_date desc, loaded_at desc, file_name
