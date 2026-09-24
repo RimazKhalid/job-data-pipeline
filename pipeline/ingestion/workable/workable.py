@@ -32,7 +32,10 @@ This script mirrors Ashby.py:
   4. Writes ONE JSON file per company, landed in the same raw-layer
      folder structure used elsewhere in the pipeline:
 
-         adls_upload/workable/ingest_date=<YYYY-MM-DD>/<account_slug>.json
+         <raw>/workable/ingest_date=<YYYY-MM-DD>/<account_slug>.json
+
+     <raw> is the raw/ folder next to the repo (see pipeline/common/config.py),
+     the same landing zone the Jooble and JSearch collectors use.
 
      Each file's top-level shape is unchanged from the API response
      (e.g. {"jobs": [...]}), just with "jobs" filtered to Saudi only.
@@ -43,6 +46,12 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # pipeline/
+from common import config
 
 # ---------------------------------------------------------------------
 # 1. CONFIG — add every Workable account slug you want to pull from here
@@ -69,7 +78,7 @@ WORKABLE_ACCOUNTS = [
     # add more confirmed Saudi/regional Workable accounts here
 ]
 
-BASE_DIR = "adls_upload/workable"   # raw landing layer, same layout as the pipeline's ADLS drop
+BASE_DIR = config.raw_dir_for("workable")   # <raw>/workable/, shared landing zone for every source
 
 SAUDI_KEYWORDS = [
     "saudi", "saudi arabia", "ksa",
@@ -223,8 +232,8 @@ def main():
         saudi_jobs = [j for j in valid_jobs if is_saudi_job(j)]
         print(f"  {len(saudi_jobs)} of them are Saudi-based")
 
-        if not saudi_jobs:
-            continue
+        # saved even when empty: an empty file tells dbt this board WAS pulled and has
+        # no open Saudi postings, so its old postings are marked closed
 
         # keep the original top-level response shape, no transformation,
         # just the "jobs" list filtered down to Saudi postings

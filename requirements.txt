@@ -1,4 +1,13 @@
-﻿requests
+﻿
+
+
+//azure-storage-file-datalake
+
+
+
+requests
 python-dotenv
+azure-storage-blob
 dbt-core==1.12.3
 dbt-snowflake==1.12.0
+ 
