@@ -1,4 +1,10 @@
 -- dbt/analyses/pipeline_audit.sql
+--
+-- ingest_dates = distinct UTC dates of the landed data (the ingest_date=... partitions for ATS
+-- files, the envelope ingested_at date for Jooble / JSearch). It is NOT the number of repeated
+-- collections: Jooble's single 19-hour campaign spans 2 dates, and JSearch's single campaign
+-- (one general query, then the city / keyword / date-window layers a day later) spans 3.
+-- The ATS boards were each collected twice (2 dates = 2 full snapshots).
 -- Pipeline audit, RAW -> staging -> intermediate, one row per source (data_model.md, Section 12.1).
 -- Re-run after every collection. The numbers go on the data-quality slide and in data_model.md 12.1.
 --
@@ -7,19 +13,19 @@
 --
 -- Columns
 --   landed_files              rows in the RAW table (ATS: one per board file; aggregators: one per API page)
---   collection_dates          distinct collection dates (ATS: ingest_date folder; aggregators: envelope date)
+--   ingest_dates          distinct collection dates (ATS: ingest_date folder; aggregators: envelope date)
 --   failed_pages              aggregator pages landed with an HTTP status other than 200
 --   raw_rows                  job objects in RAW (aggregators: from HTTP 200 pages)
 --   out_of_scope_rows         dropped by the Saudi scope filter in staging (ashby, greenhouse)
 --   within_source_duplicates  copies of the same posting removed by staging dedup
 --   staged_listings           rows in staging = listings
 --   active / disappeared      is_active in int_job_listings (ATS: board evidence; aggregators: 7-day rule)
- 
+
 with raw_files as (
     {% for s in ['ashby', 'workable', 'greenhouse', 'smartrecruiters'] %}
     select '{{ s }}'                                              as source_name,
            count(*)                                               as landed_files,
-           count(distinct {{ ingest_date_from_path('file_name') }}) as collection_dates,
+           count(distinct {{ ingest_date_from_path('file_name') }}) as ingest_dates,
            null::number                                           as failed_pages
     from {{ source('raw', 'raw_' ~ s) }}
     union all
@@ -33,7 +39,7 @@ with raw_files as (
     {% if not loop.last %}union all{% endif %}
     {% endfor %}
 ),
- 
+
 raw_rows as (
     select 'ashby' as source_name, count(*) as raw_rows
     from {{ source('raw', 'raw_ashby') }}, lateral flatten(input => raw_data:jobs)
@@ -57,7 +63,7 @@ raw_rows as (
          lateral flatten(input => try_parse_json(raw_data:response_raw::string):data)
     where raw_data:http_status::number = 200
 ),
- 
+
 staged as (
     {% for s in ['ashby', 'workable', 'greenhouse', 'smartrecruiters', 'jooble', 'jsearch'] %}
     select '{{ s }}'          as source_name,
@@ -67,7 +73,7 @@ staged as (
     {% if not loop.last %}union all{% endif %}
     {% endfor %}
 ),
- 
+
 status as (
     select source_name,
            count_if(is_active)     as active,
@@ -75,12 +81,12 @@ status as (
     from {{ ref('int_job_listings') }}
     group by source_name
 ),
- 
+
 per_source as (
     select
         f.source_name,
         f.landed_files,
-        f.collection_dates,
+        f.ingest_dates,
         f.failed_pages,
         r.raw_rows,
         r.raw_rows - s.staged_copies            as out_of_scope_rows,
@@ -93,7 +99,7 @@ per_source as (
     join staged s       on f.source_name = s.source_name
     left join status st on f.source_name = st.source_name
 )
- 
+
 select * from (
     select * from per_source
     union all
