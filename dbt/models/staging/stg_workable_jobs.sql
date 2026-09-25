@@ -14,6 +14,9 @@
 --      description is HTML; stripping happens in intermediate.
 --   6. posting_date_raw: published_on / created_at are date-only, converted to midnight UTC.
 --   7. Added department, function, industry, education.
+--   8. copies_landed: how many landed copies of this posting RAW holds (all snapshots), counted
+--      before dedup because this is the last layer where the copies exist. Used by the quality
+--      measures in fct_job_listings.
 
 with source as (
     select
@@ -103,6 +106,7 @@ deduped as (
         *,
         min(ingested_at) over (partition by source_job_id, city_raw) as first_seen_at,
         max(ingested_at) over (partition by source_job_id, city_raw) as last_seen_at,
+        count(*)         over (partition by source_job_id, city_raw) as copies_landed,
         -- open when any copy of the posting sits in the latest pull of its own board. Comparing
         -- against the latest date of the whole source would mark every board that was not
         -- re-pulled as closed

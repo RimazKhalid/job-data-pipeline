@@ -21,6 +21,8 @@
 --      Keeping them would fail a unique test on source_job_id, this model's key.
 --      The same real job listed on a different source carries a different id, passes
 --      that test, and is resolved in the intermediate layer instead.
+--
+--   5. copies_landed: how many landed copies of this posting RAW holds, counted before dedup.
 
 with source as (
     select raw_data, file_name, loaded_at
@@ -89,6 +91,7 @@ select
     -- because this is the last layer where they still exist
     min(ingested_at) over (partition by source_job_id)                             as first_seen_at,
     max(ingested_at) over (partition by source_job_id)                             as last_seen_at,
+    count(*)         over (partition by source_job_id)                             as copies_landed,
 
     batch_id,
     http_status

@@ -271,3 +271,8 @@ models:
           - accepted_values:
               arguments:
                 values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+      - name: country_raw
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['SA']

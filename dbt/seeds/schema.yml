@@ -76,3 +76,31 @@ seeds:
           - accepted_values:
               arguments:
                 values: ['Internship', 'Entry', 'Associate', 'Mid-Senior', 'Director', 'Executive', 'Unknown']
+
+  - name: seed_sources
+    description: >
+      One row per source. source_type separates employer job boards (ATS), whose files list every
+      open job, from query-based aggregators. source_priority decides which listing represents a
+      job when several sources publish it: employer-published data first, the snippet-only
+      source last. Read by int_job_listings and dim_source.
+    config:
+      column_types:
+        source_name: varchar
+        source_type: varchar
+        collection_method: varchar
+        source_priority: number
+    columns:
+      - name: source_name
+        data_tests:
+          - unique
+          - not_null
+      - name: source_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ATS', 'Aggregator']
+      - name: source_priority
+        data_tests:
+          - unique
+          - not_null
