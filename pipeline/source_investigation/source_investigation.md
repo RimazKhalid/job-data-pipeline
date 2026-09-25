@@ -10,6 +10,14 @@ selected sources turned out to contain once collected.
 | **Investigation dates** | 31 August – 2 September 2026 (probes), updated with collection results in September 2026 |
 | **Collected listings** | 12,928 unique listings after within-source deduplication |
 
+Files in this folder:
+
+| File | Content |
+|---|---|
+| `README.md` | This summary: decisions, collection results, and how the findings shaped the pipeline |
+| [`data_sources.md`](data_sources.md) | Full evaluation matrix written during the probes (fields, auth, limits, decision per source) |
+| [`jooble.md`](jooble.md) | Jooble collection report: query design, volumes, distributions, limitations |
+| [`jsearch.md`](jsearch.md) | JSearch collection report: query design, volumes, distributions, limitations |
 
 The probe scripts used for the evaluation are in [`../probes/`](../probes/).
 
