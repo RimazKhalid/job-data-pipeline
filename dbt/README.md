@@ -194,6 +194,81 @@ Snapshot of 2026-09-23 (one snapshot per ATS source):
 
 Combines the shared columns from all six staging models into one table via `dbt_utils.union_relations()`. Within-source duplication is already resolved at this point (see "Two Kinds of Duplication" above), so this layer's remaining job is cross-source duplicate resolution: matching postings that represent the same real job across different sources, using signals like `job_publisher` (JSearch) and `underlying_source` (Jooble) alongside title/company/location/date proximity.
 
+
+
+# Final datasets — Job Market Data Pipeline (Saudi Arabia)
+ 
+Exports of the seven tables in Snowflake schema `JOB_PIPELINE_DB.MARTS`: the star schema that
+Power BI reads. One CSV per table, UTF-8, with a header row.
+ 
+| | |
+|---|---|
+| **Generated** | 2026-09-25, from `dbt build` on branch `rimaz-reorg-pipeline` |
+| **Observation window** | September 2026 (collections from 9 to 24 September) |
+| **Sources** | Ashby, Greenhouse, SmartRecruiters, Workable (employer job boards); Jooble, JSearch (aggregators) |
+| **Model** | `dbt/data_modeling/data_model.md` |
+ 
+## Files
+ 
+| File | Rows | Grain |
+|---|---|---|
+| `fct_jobs.csv` | 12,472 | One job opening: one job posting in one Saudi location, after merging its listings across sources |
+| `dim_job_posting.csv` | 12,021 | One job posting (12,020 + Unknown) |
+| `dim_company.csv` | 1,854 | One company (1,853 + Unknown) |
+| `dim_location.csv` | 54 | One location at city, region or country level (+ Unknown) |
+| `dim_job_attributes.csv` | 398 | One observed combination of category, employment type, workplace type, remote status and experience level (+ Unknown) |
+| `dim_date.csv` | 2,999 | One day, from the oldest posting date to the last collection (+ Unknown `-1`) |
+| `dim_source.csv` | 7 | One source (6 + Unknown) |
+ 
+Totals: 12,928 listings → 12,472 job openings → 12,020 job postings. 393 openings (3.2%) were
+found on more than one source; 129 were taken down during September (employer-board evidence).
+ 
+## Columns
+ 
+### `fct_jobs`
+ 
+| Column | Meaning |
+|---|---|
+| `job_sk` | Key of the job opening |
+| `posting_sk` | → `dim_job_posting`. Count job postings as `COUNT(DISTINCT posting_sk)` |
+| `company_sk` | → `dim_company` (`-1` = unknown or placeholder name) |
+| `location_sk` | → `dim_location` |
+| `job_attributes_sk` | → `dim_job_attributes` (`-1` = all attributes unknown) |
+| `primary_source_sk` | → `dim_source`: source of the listing that represents the opening |
+| `posting_date_sk`, `first_seen_date_sk`, `last_seen_date_sk` | → `dim_date` (`YYYYMMDD`; `-1` = no date) |
+| `job_count` | 1 per row. Job openings = `SUM(job_count)` |
+| `listing_count` | Listings merged into the opening |
+| `listing_count_workable` … `listing_count_jooble` | The same per source; the six add up to `listing_count` |
+| `copies_landed` | Copies of those listings landed in RAW before deduplication |
+| `source_count` | Distinct sources among the listings (1–6). Non-additive |
+| `days_open` | Days from posting date to last seen; empty when there is no posting date. Summarize with a median |
+| `is_active` | Still advertised at the last collection (employer-board evidence first) |
+ 
+### Dimensions
+ 
+| Table | Columns |
+|---|---|
+| `dim_job_posting` | `posting_sk`, `job_title`, `description_text`, `job_url`, `apply_url`, `salary_text` |
+| `dim_company` | `company_sk`, `company_name`, `company_norm`, `industry`, `is_recruitment_agency` |
+| `dim_location` | `location_sk`, `city`, `region`, `country`, `location_level` (`city` / `region` / `country`) |
+| `dim_job_attributes` | `job_attributes_sk`, `job_category`, `employment_type`, `workplace_type`, `remote_status`, `experience_level` |
+| `dim_date` | `date_sk`, `full_date`, `day_of_week`, `week_start_date` (Sunday), `month`, `quarter`, `year`, `is_weekend` (Fri–Sat) |
+| `dim_source` | `source_sk`, `source_name`, `source_type` (`ATS` / `Aggregator`), `collection_method`, `source_priority` |
+ 
+## How the files were produced
+ 
+For each table, in a Snowflake worksheet: `select * from job_pipeline_db.marts.<table>;`, then
+**Download results → CSV**. Row counts above were checked against `show tables in schema
+job_pipeline_db.marts` after the final build.
+ 
+## Known limitations
+ 
+See `dbt/data_modeling/data_model.md`, Section 14. In short: cross-source overlap is a lower
+bound (exact matching only); experience level exists only for Workable and SmartRecruiters;
+Jooble has no posting date and a snippet description; aggregator status is as of their single
+collection (9 and 11 September).
+
+
 ---
 
 ## Team Workflow for dbt

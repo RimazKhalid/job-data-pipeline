@@ -1,0 +1,125 @@
+# dbt/models/intermediate/schema.yml
+version: 2
+
+models:
+  - name: int_job_listings
+    description: >
+      All six sources combined, one row per listing (one posting on one source; for Workable,
+      one posting in one city). Adds source metadata from seed_sources, the publisher, the
+      standardized company, city, region, job category, experience level and remote status,
+      the plain-text description, and the matching keys (title_norm, company_norm, city_std)
+      used by int_jobs_matched. See data_model.md, Sections 8.2 and 10.
+    data_tests:
+      # no HTML tag or entity left in the description (warning while the rule is new)
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "not regexp_like(description_text, '.*(<[a-zA-Z/][^>]*>|&lt;|&gt;|&amp;).*', 's')"
+          config:
+            where: "description_text is not null"
+            severity: warn
+    columns:
+      - name: source_record_sk
+        description: "Listing key carried over from staging. Unique across all sources."
+        data_tests:
+          - unique
+          - not_null
+      - name: posting_sk
+        description: "One posting across its cities: hash of source_name and source_job_id."
+        data_tests:
+          - not_null
+      - name: source_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ATS', 'Aggregator']
+      - name: source_priority
+        description: "Order used to choose the representative listing (1 = preferred)."
+        data_tests:
+          - not_null
+      - name: publisher
+        description: "Who put the advertisement online: the employer's board for ATS, the originating site for aggregators. Two listings from the same publisher are never merged."
+        data_tests:
+          - not_null
+      - name: company_name
+        description: "Standard name from seed_company_aliases when listed, otherwise the source's name; 'Unknown' for placeholders and missing names."
+        data_tests:
+          - not_null
+      - name: employment_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other', 'Unknown']
+      - name: workplace_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Hybrid', 'OnSite', 'Unknown']
+      - name: remote_status
+        description: "From workplace_type first, then the source's remote flag. Hybrid is Not remote."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Not remote', 'Unknown']
+      - name: experience_level
+        description: "Mapped by seed_experience_levels. A raw value missing from the seed passes through unchanged and fails this test."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Internship', 'Entry', 'Associate', 'Mid-Senior', 'Director', 'Executive', 'Unknown']
+      - name: location_level
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['city', 'region', 'country']
+      - name: job_category
+        description: "From title keywords in seed_job_categories; 'Other' when no keyword matches, 'Unknown' when there is no title."
+        data_tests:
+          - not_null
+      - name: is_active
+        description: "ATS: present in the latest pull of its own board. Aggregators: seen within 7 days of the source's latest collection."
+        data_tests:
+          - not_null
+      - name: title_norm
+        description: "Matching key only: lower-case, punctuation, bracketed notes and hiring/location noise removed."
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: description_text
+        description: "Plain text: HTML entities decoded, tags removed, whitespace collapsed."
+
+  - name: int_jobs_matched
+    description: >
+      One row per listing with the job opening (job_sk) it belongs to after cross-source
+      matching: exact match on title_norm + company_norm + city_std, never two listings from the
+      same publisher in one opening, listings of one publisher paired rank to rank.
+      is_representative marks the listing whose values represent the opening.
+      See data_model.md, Section 8.
+    columns:
+      - name: source_record_sk
+        data_tests:
+          - unique
+          - not_null
+      - name: job_sk
+        description: "source_record_sk of the opening's earliest listing."
+        data_tests:
+          - not_null
+      - name: is_representative
+        data_tests:
+          - not_null
+
+  - name: int_job_openings
+    description: >
+      One row per job opening (job_sk) with the survivorship rules of data_model.md, Section 8.4,
+      applied once: values from the representative listing, first known values by source
+      priority, ATS-first posting date and status, and the listing counts. Every mart reads it.
+    columns:
+      - name: job_sk
+        data_tests:
+          - unique
+          - not_null
+      - name: posting_sk
+        data_tests:
+          - not_null

@@ -1,0 +1,187 @@
+# dbt/models/marts/schema.yml
+version: 2
+
+models:
+  - name: fct_jobs
+    description: >
+      The only fact table. One row per job opening: one job posting in one Saudi location,
+      after the listings of the same posting on several sources have been merged. Accumulating
+      snapshot with three date roles. Job openings = SUM(job_count); job postings =
+      COUNT(DISTINCT posting_sk); listings = SUM(listing_count). See data_model.md, Section 7.
+    data_tests:
+      # the grain: one row per posting and location
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: ['posting_sk', 'location_sk']
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "first_seen_date_sk <= last_seen_date_sk"
+    columns:
+      - name: job_sk
+        data_tests:
+          - unique
+          - not_null
+      - name: posting_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_job_posting')
+                field: posting_sk
+      - name: company_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_company')
+                field: company_sk
+      - name: location_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_location')
+                field: location_sk
+      - name: job_attributes_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_job_attributes')
+                field: job_attributes_sk
+      - name: primary_source_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_source')
+                field: source_sk
+      - name: posting_date_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_sk
+      - name: first_seen_date_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_sk
+      - name: last_seen_date_sk
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_sk
+      - name: days_open
+        description: "Posting date to last seen. Non-additive: summarize with a median, never sum."
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+      - name: is_active
+        description: "From employer-board (ATS) listings when the opening has one; otherwise from the aggregator rule."
+        data_tests:
+          - not_null
+
+  - name: dim_job_posting
+    description: "One row per job posting; one-to-many with fct_jobs (a Workable posting has one opening per city)."
+    columns:
+      - name: posting_sk
+        data_tests:
+          - unique
+          - not_null
+          - has_one_unknown_member
+
+  - name: dim_company
+    description: "One row per company (company_norm); agencies flagged for Q3 and Q7."
+    columns:
+      - name: company_sk
+        data_tests:
+          - unique
+          - not_null
+          - has_one_unknown_member
+      - name: is_recruitment_agency
+        data_tests:
+          - not_null
+
+  - name: dim_location
+    description: "City, region or country level. Hierarchy: country -> region -> city."
+    columns:
+      - name: location_sk
+        data_tests:
+          - unique
+          - not_null
+          - has_one_unknown_member
+      - name: location_level
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['city', 'region', 'country', 'unknown']
+
+  - name: dim_job_attributes
+    description: "Junk dimension: job_category, employment_type, workplace_type, remote_status, experience_level."
+    columns:
+      - name: job_attributes_sk
+        data_tests:
+          - unique
+          - not_null
+          - has_one_unknown_member
+      - name: job_category
+        data_tests:
+          - not_null
+      - name: employment_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other', 'Unknown']
+      - name: workplace_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Hybrid', 'OnSite', 'Unknown']
+      - name: remote_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Remote', 'Not remote', 'Unknown']
+      - name: experience_level
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Internship', 'Entry', 'Associate', 'Mid-Senior', 'Director', 'Executive', 'Unknown']
+
+  - name: dim_source
+    description: "The six sources from seed_sources, plus Unknown."
+    columns:
+      - name: source_sk
+        data_tests:
+          - unique
+          - not_null
+          - has_one_unknown_member
+      - name: source_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ATS', 'Aggregator', 'Unknown']
+
+  - name: dim_date
+    description: "Role-playing date dimension (posted, first seen, last seen). Weeks start on Sunday."
+    columns:
+      - name: date_sk
+        data_tests:
+          - unique
+          - not_null
+          - has_one_unknown_member:
+              arguments:
+                unknown_value: -1
