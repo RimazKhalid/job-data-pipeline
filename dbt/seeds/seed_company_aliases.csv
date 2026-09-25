@@ -1,0 +1,37 @@
+alias,company_std,is_recruitment_agency
+private,Unknown,false
+confidential,Unknown,false
+undisclosed,Unknown,false
+anonymous,Unknown,false
+not disclosed,Unknown,false
+sarjai,Sarj AI,false
+alan,Alan,false
+immersivelabs,Immersive Labs,false
+elevenlabs,ElevenLabs,false
+lilt production,Lilt,false
+hopper,Hopper,false
+checkout com,Checkout.com,false
+takein,Takein,false
+nash,Nash,false
+lakeora,Lakeora,false
+camunda,Camunda,false
+qiddiya,Qiddiya Investment Company,false
+qiddiya investment,Qiddiya Investment Company,false
+jasara pmc,JASARA PMC,false
+jasara program management,JASARA PMC,false
+wsp,WSP,false
+wsp global,WSP,false
+atkinsréalis,AtkinsRéalis,false
+atkinsrealis,AtkinsRéalis,false
+snc lavalin,AtkinsRéalis,false
+aramco overseas uk,Aramco Overseas Company,false
+eram talent,Eram Talent,true
+for humanity,Jobs for Humanity,true
+hudson manpower,Hudson Manpower,true
+rawaj human capital management,Rawaj Human Capital Management,true
+international hospitals recruitment,International Hospitals Recruitment,true
+sisco,Sisco Jobs,true
+career land center,Career Land Center,true
+qureos,Qureos,true
+antal international network ime office,Antal International,true
+stellar hunters,Stellar Hunters,true

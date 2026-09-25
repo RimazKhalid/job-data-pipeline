@@ -1,0 +1,78 @@
+version: 2
+
+seeds:
+  - name: seed_city_mapping
+    description: >
+      Every spelling of a Saudi city seen across the six sources (English, transliterated,
+      Arabic, airport codes) mapped to one standard city and region. Aliases are stored in
+      normalize_text() form: lower-case, punctuation replaced by spaces. Rows with an empty
+      city_std are region names ("al qassim region", "eastern province"): a listing that
+      matches only one of these is kept at region level.
+    config:
+      column_types:
+        alias: varchar
+        city_std: varchar
+        region_std: varchar
+    columns:
+      - name: alias
+        data_tests:
+          - unique
+          - not_null
+
+  - name: seed_job_categories
+    description: >
+      Title keywords mapped to a job category. The lowest priority wins when a title matches
+      several keywords, so specific phrases ("data analyst", "software engineer") are checked
+      before generic words ("analyst", "engineer").
+    config:
+      column_types:
+        keyword: varchar
+        job_category: varchar
+        priority: number
+    columns:
+      - name: keyword
+        data_tests:
+          - unique
+          - not_null
+
+  - name: seed_company_aliases
+    description: >
+      Company spellings mapped to one standard name, with recruitment agencies flagged.
+      `alias` is stored in normalize_company() form (lower-case, punctuation to spaces, legal
+      suffixes and the words company / group / jobs removed), so "Jobs for Humanity" is stored as
+      "for humanity". Placeholders (Private Company, Confidential) map to Unknown. Covers the
+      eleven Ashby board slugs, aliases found in the M3 top-60 list (58% of listings), and the
+      agencies confirmed in that list. Companies not listed keep their own name and
+      is_recruitment_agency = false.
+    config:
+      column_types:
+        alias: varchar
+        company_std: varchar
+        is_recruitment_agency: boolean
+    columns:
+      - name: alias
+        data_tests:
+          - unique
+          - not_null
+      - name: company_std
+        data_tests:
+          - not_null
+
+  - name: seed_experience_levels
+    description: >
+      Workable and SmartRecruiters experience values (LinkedIn's scale) mapped to the closed
+      list. Joined on lower(trim(raw value)); empty or null values become Unknown in SQL.
+    config:
+      column_types:
+        raw_value: varchar
+        experience_level: varchar
+    columns:
+      - name: raw_value
+        data_tests:
+          - unique
+          - not_null
+      - name: experience_level
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Internship', 'Entry', 'Associate', 'Mid-Senior', 'Director', 'Executive', 'Unknown']
