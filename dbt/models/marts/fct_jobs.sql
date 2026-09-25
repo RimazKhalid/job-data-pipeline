@@ -11,6 +11,8 @@
 --   source_count              distinct sources among the listings (non-additive)
 --   days_open                 posting date to last seen; summarized with a median (non-additive)
 -- Job postings are counted as COUNT(DISTINCT posting_sk).
+-- is_active is as of the last collection of the opening's source: status_basis says whether that
+-- is the employer's board (24 Sep) or an aggregator query (9-11 Sep). Split "active" counts by it.
 
 select
     o.job_sk,
@@ -43,5 +45,6 @@ select
     o.copies_landed,
     o.source_count,
     o.days_open,
-    o.is_active
+    o.is_active,
+    o.status_basis
 from {{ ref('int_job_openings') }} o

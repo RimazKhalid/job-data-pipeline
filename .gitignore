@@ -1,24 +1,39 @@
-﻿# secrets
+﻿# .gitignore
+ 
+# secrets: every .env variant except the placeholder template
 .env
-
+.env.*
+!.env.example
+*.pem
+*.p8
+*.key
+profiles.yml
+ 
 # raw landing zones (never commit raw data)
 raw/
 adls_upload/
 **/Data Sample/
 *_seen_ids.json
 query_log.csv
-# greenhouse.py writes <board>_jobs.json into the folder it runs from
+extract_log.csv
+run_log.csv
+# greenhouse.py used to write <board>_jobs.json into the folder it ran from
 /*_jobs.json
 pipeline/**/*_jobs.json
-
+ 
 # python
 __pycache__/
 *.pyc
 .venv/
-
+venv/
+ 
 # dbt
 dbt/target/
 dbt/logs/
 dbt/dbt_packages/
-
+ 
 logs/
+ 
+# OS / editor noise
+.DS_Store
+Thumbs.db

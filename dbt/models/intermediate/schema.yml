@@ -123,3 +123,16 @@ models:
       - name: posting_sk
         data_tests:
           - not_null
+      - name: posting_date
+        description: "Earliest ATS posting date, else the earliest of any listing. A date before 2015 would stretch dim_date and signals a parsing error."
+        data_tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= '2015-01-01'::date"
+              config:
+                where: "posting_date is not null"
+      - name: status_basis
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['employer board', 'aggregator query']

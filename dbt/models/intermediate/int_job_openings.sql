@@ -52,6 +52,10 @@ aggregated as (
                 then boolor_agg(iff(source_type = 'ATS', is_active, null))   -- employer-board evidence only
             else boolor_agg(is_active)                                        -- aggregator-only openings
         end                                                                       as is_active,
+        -- what "active" is based on: the employer's own board (as of the last ATS collection,
+        -- 24 Sep) or an aggregator query (as of that aggregator's single collection, 9-11 Sep)
+        iff(count_if(source_type = 'ATS') > 0, 'employer board', 'aggregator query')
+                                                                                  as status_basis,
 
         count(*)                                                                  as listing_count,
         count_if(source_name = 'workable')                                        as listing_count_workable,
@@ -97,6 +101,7 @@ select
     iff(a.posting_date is null, null,
         datediff('day', a.posting_date, a.last_seen_at::date))                     as days_open,
     a.is_active,
+    a.status_basis,
 
     a.listing_count,
     a.listing_count_workable,

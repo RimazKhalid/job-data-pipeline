@@ -1,50 +1,43 @@
+
 """
 Ashby Job Board API — raw data collection script (Saudi-filtered)
 ================================================
-
+ 
 Ashby gives every company that uses it a PUBLIC job-board API, no API key
 needed. You just need the company's "job board name" (a slug), which you
 can find in their careers-page URL:
-
+ 
     https://jobs.ashbyhq.com/<job-board-name>
-                              ^^^^^^^^^^^^^^^^
-                              this part
-
-Example: https://jobs.ashbyhq.com/notion  ->  job_board_name = "notion"
-
+ 
 The API endpoint is:
     GET https://api.ashbyhq.com/posting-api/job-board/<job-board-name>
-
-It returns JSON with a list of open jobs. This script:
-  1. Calls that endpoint for one or more companies
+ 
+This script:
+  1. Calls that endpoint for every board in JOB_BOARD_NAMES, retrying timeouts,
+     HTTP 429 and 5xx (common/http_retry.py)
   2. Filters the "jobs" list down to Saudi-based postings only
      (via SAUDI_KEYWORDS matched against the "location" field)
-  3. Saves that filtered result AS-IS — no field extraction, no
-     renaming, no reshaping. Every job dict keeps every original key
-     exactly as Ashby returned it; only the list of jobs is filtered.
-  4. Writes ONE JSON file per company, landed in the same raw-layer
-     folder structure used elsewhere in the pipeline:
-
+  3. Saves that filtered result AS-IS: every job dict keeps every original key
+  4. Writes ONE JSON file per company:
          <raw>/ashby/ingest_date=<YYYY-MM-DD>/<job_board_name>.json
-
-     <raw> is the raw/ folder next to the repo (see pipeline/common/config.py),
-     the same landing zone the Jooble and JSearch collectors use.
-
-     Each file's top-level shape is unchanged from the API response
-     (e.g. {"jobs": [...]}), just with "jobs" filtered to Saudi only.
+  5. Logs one row per board to <raw>/extract_log.csv (common/extract_log.py)
+ 
+A board that still fails after the retries is logged as 'failed' and gets no file, so dbt treats
+it as "not pulled"; the other boards are still collected. The script exits with an error only
+when every board failed.
 """
-
-import requests
+ 
 import json
 import os
-from datetime import datetime, timezone
-
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
-
+ 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # pipeline/
-from common import config
-
+from common import config, extract_log, http_retry
+ 
+SOURCE_ID = "ashby"
+ 
 # ---------------------------------------------------------------------
 # 1. CONFIG — add every Ashby company slug you want to pull from here
 # ---------------------------------------------------------------------
@@ -59,11 +52,11 @@ JOB_BOARD_NAMES = [
     "takein",
     "Nash",
     "lakeora",
-    "camunda",
+    
 ]
-
-BASE_DIR = config.raw_dir_for("ashby")   # <raw>/ashby/, shared landing zone for every source
-
+ 
+BASE_DIR = config.raw_dir_for(SOURCE_ID)   # <raw>/ashby/, shared landing zone for every source
+ 
 SAUDI_KEYWORDS = [
     "saudi", "saudi arabia", "ksa",
     "riyadh", "jeddah", "jiddah", "mecca", "makkah", "medina", "madinah",
@@ -73,83 +66,80 @@ SAUDI_KEYWORDS = [
     "al ahsa", "al-ahsa", "hofuf", "qatif", "sakaka", "arar", "baha",
     "al baha",
 ]
-
-
+ 
+ 
 def is_saudi_location(location: str) -> bool:
+    # substring match: "hail" also matches "Thailand"; stg_ashby_jobs re-checks the country field
     location = (location or "").lower()
     return any(kw in location for kw in SAUDI_KEYWORDS)
-
-
+ 
+ 
 # ---------------------------------------------------------------------
 # 2. FETCH — one company's job board
 # ---------------------------------------------------------------------
-def fetch_job_board(job_board_name: str) -> dict:
-    """Calls the Ashby public API for one company and returns the raw JSON."""
+def fetch_job_board(job_board_name: str):
+    """Raw JSON of one board, or None when the board does not exist (404).
+    Raises http_retry.FetchError when the board still fails after the retries."""
     url = f"https://api.ashbyhq.com/posting-api/job-board/{job_board_name}"
     params = {"includeCompensation": "false"}  # set True if you also want salary bands
-
-    response = requests.get(url, params=params, timeout=15)
-
-    # Ashby returns 404 if the job-board slug doesn't exist / isn't public
-    if response.status_code == 404:
-        print(f"  [skip] '{job_board_name}' — no public job board found (404)")
+    status, data = http_retry.get_json(url, params=params, timeout=30)
+    if status == 404:
         return None
-
-    response.raise_for_status()  # raises an error for any other bad status (429, 500, etc.)
-    return response.json()
-
-
+    return data
+ 
+ 
 # ---------------------------------------------------------------------
-# 3. SAVE — write the Saudi-filtered response, untouched otherwise,
-#    into the same ingest_date= folder layout as the rest of the raw layer
+# 3. SAVE — write the Saudi-filtered response, untouched otherwise
 # ---------------------------------------------------------------------
-def save_filtered_snapshot(job_board_name: str, filtered_json: dict, ingest_date: str) -> None:
+def save_filtered_snapshot(job_board_name: str, filtered_json: dict, ingest_date: str):
     out_dir = os.path.join(BASE_DIR, f"ingest_date={ingest_date}")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"{job_board_name}.json")
-
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(filtered_json, f, ensure_ascii=False, indent=2)
-        print(f"  [saved] {path}")
-    except PermissionError:
-        print(
-            f"  Could not write '{path}' — it's likely open in another "
-            "program or locked by OneDrive syncing. Close it and rerun."
-        )
-
-
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(filtered_json, f, ensure_ascii=False, indent=2)
+    print(f"  [saved] {path}")
+    return path
+ 
+ 
 # ---------------------------------------------------------------------
-# 4. MAIN — loop over all companies, filter by location only, save raw JSON
+# 4. MAIN — one board at a time; a failing board never stops the others
 # ---------------------------------------------------------------------
 def main():
     ingest_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
+    failed = 0
+ 
     for job_board_name in JOB_BOARD_NAMES:
         print(f"Fetching: {job_board_name}")
-        raw = fetch_job_board(job_board_name)
-
-        if raw is None:
-            continue
-
-        jobs = raw.get("jobs", [])
-        print(f"  found {len(jobs)} open jobs")
-
-        saudi_jobs = [j for j in jobs if is_saudi_location(j.get("location"))]
-        print(f"  {len(saudi_jobs)} of them are Saudi-based")
-
-        # saved even when empty: an empty file tells dbt this board WAS pulled and has
-        # no open Saudi postings, so its old postings are marked closed
-
-        # keep the original top-level response shape, no transformation,
-        # just the "jobs" list filtered down to Saudi postings
-        filtered = dict(raw)
-        filtered["jobs"] = saudi_jobs
-
-        save_filtered_snapshot(job_board_name, filtered, ingest_date)
-
-    print("\nDone.")
-
-
+        try:
+            raw = fetch_job_board(job_board_name)
+            if raw is None:
+                print(f"  [skip] '{job_board_name}' — no public job board found (404)")
+                extract_log.log_board(SOURCE_ID, job_board_name, ingest_date, "not_found", http_status=404)
+                continue
+ 
+            jobs = raw.get("jobs", [])
+            saudi_jobs = [j for j in jobs if is_saudi_location(j.get("location"))]
+            print(f"  {len(jobs)} open jobs, {len(saudi_jobs)} Saudi-based")
+ 
+            # saved even when empty: an empty file tells dbt this board WAS pulled and has
+            # no open Saudi postings, so its old postings are marked closed
+            filtered = dict(raw)
+            filtered["jobs"] = saudi_jobs
+            path = save_filtered_snapshot(job_board_name, filtered, ingest_date)
+            extract_log.log_board(SOURCE_ID, job_board_name, ingest_date, "saved", http_status=200,
+                                  jobs_returned=len(jobs), jobs_kept=len(saudi_jobs), file_path=path)
+ 
+        except (http_retry.FetchError, OSError) as e:
+            # OSError: the file could not be written (e.g. locked by OneDrive)
+            failed += 1
+            print(f"  [failed] '{job_board_name}' — {e}; no file written, board treated as not pulled")
+            extract_log.log_board(SOURCE_ID, job_board_name, ingest_date, "failed",
+                                  http_status=getattr(e, "status", None), error=str(e))
+ 
+    print(f"\nDone. {len(JOB_BOARD_NAMES) - failed} of {len(JOB_BOARD_NAMES)} boards pulled.")
+    if failed == len(JOB_BOARD_NAMES):
+        sys.exit("Every board failed: check the network or the API before re-running.")
+ 
+ 
 if __name__ == "__main__":
     main()
