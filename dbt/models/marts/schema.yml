@@ -211,7 +211,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other', 'Unknown']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other', 'Unknown']
       - name: workplace_type
         description: "Remote, Hybrid or OnSite when the source distinguishes them."
         data_tests:

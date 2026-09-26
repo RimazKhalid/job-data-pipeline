@@ -9,10 +9,10 @@
       smartrecruiters  Full-time, Part-time, Contract, Intern
       workable         Full-time, Part-time, Contract, Other, plus 400 empty strings
 
-    Added after the September 2026 JSearch collection: combined values such as
-    "Full-time and Part-time" (or "FULLTIME, PARTTIME"). A posting that lists several types
-    cannot be assigned to one of them, so it maps to Other. No source sent such a value
-    before, so the earlier counts do not change.
+    Added after the September 2026 JSearch collection: combined values. A posting open to
+    both full-time and part-time ("Full-time and Part-time", "FULLTIME, PARTTIME") keeps that
+    meaning as its own value, 'Full-time and Part-time'; any other combination maps to Other.
+    No source sent a combined value before, so the earlier counts do not change.
 
     Comparison ignores case, hyphens and spaces, so "FullTime", "Full-time" and "full time"
     land on the same value.
@@ -24,7 +24,9 @@
 
 {% macro normalize_employment_type(column) %}
     case
-        when {{ column }} ilike '% and %' or {{ column }} like '%,%' then 'Fulltime and Parttime'
+        when lower({{ column }}) like '%full%time%' and lower({{ column }}) like '%part%time%'
+            then 'Full-time and Part-time'
+        when {{ column }} ilike '% and %' or {{ column }} like '%,%' then 'Other'
         else
             case lower(replace(replace(trim({{ column }}), '-', ''), ' ', ''))
                 when 'fulltime'   then 'Full-time'
@@ -35,7 +37,7 @@
                 when 'internship' then 'Internship'
                 when 'temporary'  then 'Temporary'
                 when 'volunteer'  then 'Volunteer'
-                when 'Fulltime and Parttime'      then 'Fulltime and Parttime'
+                when 'other'      then 'Other'
                 else nullif(trim({{ column }}), '')
             end
     end
