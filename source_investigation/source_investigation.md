@@ -1,4 +1,5 @@
-# Source Investigation — Job Market Data Pipeline (Saudi Arabia)
+  <!-- source_investigation/source_investigation.md -->
+  # Source Investigation — Job Market Data Pipeline (Saudi Arabia)
 
 Which job-data sources were evaluated, which were selected or excluded and why, and what the
 selected sources turned out to contain once collected.
@@ -7,8 +8,8 @@ selected sources turned out to contain once collected.
 |---|---|
 | **Candidates evaluated** | 17: 8 with a usable API, 9 excluded for legal or access reasons |
 | **Selected and collected** | 6: four ATS job boards (Ashby, Greenhouse, SmartRecruiters, Workable) and two aggregators (Jooble, JSearch) |
-| **Investigation dates** | 31 August – 2 September 2026 (probes), updated with collection results in September 2026 |
-| **Collected listings** | 12,928 unique listings after within-source deduplication |
+| **Investigation dates** | 31 August – 2 September 2026 (probes), updated with collection results on 26 September 2026 |
+| **Collected listings** | 13,777 unique listings after within-source deduplication (26 September build) |
 
 Files in this folder:
 
@@ -21,6 +22,7 @@ Files in this folder:
 
 The probe scripts used for the evaluation are in [`../probes/`](../probes/).
 
+  | [`../pipeline/ingestion/collection_methodology.md`](../pipeline/ingestion/collection_methodology.md) | How each source is collected: endpoints, filters, retries, query layers, quotas |
 ---
 
 ## 1. Evaluation criteria
@@ -95,15 +97,19 @@ The six sources fall into two families, and the difference drives most of the pi
 
 ### 3.1 What was collected
 
-| Source | Collection scope | Collection dates | Unique listings |
+| Source | Collection scope | Collection dates (UTC) | Unique listings |
 |---|---|---|---|
-| Ashby | 11 company boards, filtered to Saudi locations in the script | 16 and 24 Sep 2026 | 49 |
-| Greenhouse | 17 company boards, filtered to Saudi locations in the script (and in staging for the first collection) | 9 and 24 Sep 2026 | 215 |
-| SmartRecruiters | 14 companies, Saudi postings through the API's `country=sa` filter | 19 and 24 Sep 2026 | 943 |
-| Workable | 11 company accounts, filtered to Saudi Arabia in the script | 16 and 24 Sep 2026 | 1,535 |
-| Jooble | 23 locations, then 24 job-title keywords within Riyadh (see `jooble.md`) | 9 Sep 2026 | 8,262 |
-| JSearch | `date_posted` windows (today / 3 days / week / month), up to 20 pages each (see `jsearch.md`) | 10 and 11 Sep 2026 | 1,924 |
-| **Total** | | | **12,928** |
+| Ashby | 10 company boards, filtered to Saudi locations in the script | 16, 24 and 25 Sep 2026 | 49 |
+| Greenhouse | 17 company boards, filtered to Saudi locations in the script (and in staging for the first collection) | 9, 24 and 25 Sep 2026 | 217 |
+| SmartRecruiters | 14 companies, Saudi postings through the API's `country=sa` filter | 19, 24 and 25 Sep 2026 | 944 |
+| Workable | 11 company accounts, filtered to Saudi Arabia in the script | 16, 24 and 25 Sep 2026 | 1,535 |
+| Jooble | Campaign: 23 locations, then 24 job-title keywords within Riyadh (see `jooble.md`). Re-run: the general query only | Campaign 9–10 Sep; re-run 26 Sep 2026 | 8,928 |
+| JSearch | Campaign: `date_posted` windows (today / 3 days / week / month), up to 20 pages each (see `jsearch.md`). Re-run: the general query only | Campaign 10–12 Sep; re-run 26 Sep 2026 | 2,104 |
+| **Total** | | | **13,777** |
+
+The 26 September aggregator re-run repeated only the general query (`L0_general_sa`), not the
+campaign's layers, so it cannot show which campaign listings were taken down. Until the campaign is
+repeated, the aggregators' active/disappeared figures are provisional (`data_model.md`, Section 7.2).
 
 ATS boards were found manually (no ATS offers a list of its clients): by web search for each
 platform's job-page pattern, then keeping boards that returned Saudi postings.
@@ -124,7 +130,7 @@ table is the reference.
 | Posting date | ✅ | ✅ | ✅ | ✅ | ❌ (`updated` is a crawl time) | Partial (missing when the posting text is Arabic) |
 | Oldest posting still live | Feb 2026 | Sep 2024 | Jul 2018 | Jan 2024 | — | — |
 | Description | Full | Full (HTML) | Full | Full (HTML) | Snippet (~280 characters) | Full |
-| Salary | ❌ | ❌ | ❌ | ❌ | `salary` field ~96% empty; no title mentions one | Mentioned in 2 titles |
+| Salary | Off in our script (`includeCompensation=false`); the API can return bands | ❌ | ❌ | ❌ | `salary` field ~96% empty; no title mentions one | Mentioned in 2 titles |
 
 Corrections to the probe results:
 
@@ -132,8 +138,10 @@ Corrections to the probe results:
   real company names; the full data has 21% `Private Company` placeholders.
 - **Workable volume.** The probe on one account found 35 Saudi postings; eleven Saudi accounts
   gave 1,535, most of them from one recruitment agency (Eram Talent).
-- **JSearch posting dates** stop at 10 September, because JSearch was collected on 10 and 11
-  September only.
+- **JSearch posting dates** in the campaign stop at 10 September, because the campaign ran on
+  10–12 September.
+- **Ashby salary.** The probe found no salary field; the API returns salary bands when called with
+  `includeCompensation=true`, which our script sets to `false`.
 
 ---
 
@@ -145,7 +153,7 @@ Corrections to the probe results:
 | Workable publishes one record per target city under the same `shortcode` | Listing key is `shortcode` + city | `stg_workable_jobs` |
 | Only SmartRecruiters filters by country on the server | Ashby, Greenhouse and Workable are filtered by location keywords in the extraction scripts; Greenhouse also in staging, because its first collection was not filtered (24 non-Saudi postings removed) | Extraction scripts; `stg_greenhouse_jobs` |
 | Ashby returns no company name | Board slugs are mapped to company names | `seed_company_aliases` |
-| Cities are written many ways (`جدة` / `Jeddah`, `RIY`, `Ad Dammām`, `Al Qassim Region`) | One lookup table maps every spelling to a standard city and region | `seed_city_mapping` (210 spellings) |
+| Cities are written many ways (`جدة` / `Jeddah`, `RIY`, `Ad Dammām`, `Al Qassim Region`) | One lookup table maps every spelling to a standard city and region | `seed_city_mapping` (219 spellings) |
 | Aggregators republish each other and the ATS boards (JSearch lists Jooble as a publisher; Jooble lists `smartrecruiters.com` and `boards.greenhouse.io`) | Cross-source matching; two listings from the same publisher are never merged | Data model Section 8 |
 | Recruitment agencies appear as the employer (Eram Talent, Jobs for Humanity, Hudson Manpower) | Agencies are flagged and excluded from the top-employers question | `seed_company_aliases`; data model Q3 |
 | Experience level exists only in Workable and SmartRecruiters | The experience question is answered for those sources only, and says so | Data model Q7 |
@@ -159,9 +167,8 @@ Corrections to the probe results:
 - **Coverage is not exhaustive.** ATS coverage depends on which boards were found; aggregator
   coverage depends on query design, and some Jooble keyword windows and the JSearch page cap were
   still returning results when collection stopped.
-- **Aggregators were collected only once** (JSearch over two consecutive days), so their listings
-  cannot show when a job was taken down.
+- **Aggregators were collected as one campaign** (9–12 September), plus a re-run of the general
+  query only on 26 September. Their listings cannot yet show when a job was taken down; the full
+  campaign is to be repeated.
 - **Early probes used small samples.** Section 3.2 replaces their field estimates with measured
   values.
-- **Four of the six terms-of-use exclusions** (Indeed, GulfTalent, NaukriGulf, Glassdoor) were not
-  individually re-checked in the final pass.

@@ -14,6 +14,8 @@
 --
 -- "Priority" = source_priority from seed_sources, then first seen, then source_record_sk.
 
+
+
 with listings as (
     select
         *,
@@ -52,8 +54,10 @@ aggregated as (
                 then boolor_agg(iff(source_type = 'ATS', is_active, null))   -- employer-board evidence only
             else boolor_agg(is_active)                                        -- aggregator-only openings
         end                                                                       as is_active,
-        -- what "active" is based on: the employer's own board (as of the last ATS collection,
-        -- 24 Sep) or an aggregator query (as of that aggregator's single collection, 9-11 Sep)
+       
+        -- what "active" is based on: the employer's own board (latest ATS collection) or an
+        -- aggregator query (latest run of that aggregator). 'aggregator query' is PROVISIONAL:
+        -- see the note on is_active in int_job_listings.
         iff(count_if(source_type = 'ATS') > 0, 'employer board', 'aggregator query')
                                                                                   as status_basis,
 

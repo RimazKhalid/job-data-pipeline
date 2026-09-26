@@ -12,7 +12,8 @@
 --   days_open                 posting date to last seen; summarized with a median (non-additive)
 -- Job postings are counted as COUNT(DISTINCT posting_sk).
 -- is_active is as of the last collection of the opening's source: status_basis says whether that
--- is the employer's board (24 Sep) or an aggregator query (9-11 Sep). Split "active" counts by it.
+-- is the employer's board or an aggregator query. Split "active" counts by it. Aggregator status
+-- is provisional (see int_job_listings): report closures from 'employer board' only.
 
 select
     o.job_sk,

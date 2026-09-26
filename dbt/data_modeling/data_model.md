@@ -1,15 +1,16 @@
+<!-- dbt/data_modeling/data_model.md -->
 # Data Model — Job Market Data Pipeline (Saudi Arabia)
 
 Target dimensional model for the curated job-market dataset, designed before the intermediate and marts layers were built, following the dimensional modeling process: business questions → business process → grain → dimensions → measures → validation.
 
 |                        |                                                                                                                                         |
 |------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| **Version**            | 2, 25 September 2026. Changes from version 1 are listed in Section 16                                                                   |
+| **Version**            | 2.1, 26 September 2026. Numbers are from the 26 September build; the active/disappeared split for Jooble and JSearch is provisional (Section 7.2). Changes in Section 16 |
 | **Pattern**            | Star schema: **one fact table** (`fct_jobs`, an accumulating snapshot) and six dimensions                                               |
 | **Approach**           | ELT — raw data loaded untouched into Snowflake, transformed with dbt                                                                    |
 | **Dimension history**  | Type 1 (overwrite). A job opening’s lifecycle is kept as dates on the fact                                                              |
-| **Observation window** | September 2026 — our collections in September, starting on 9 September. The last collection of every employer board was on 24 September |
-| **Status**             | Staging built on two snapshots · intermediate and marts designed (Section 15)                                                           |
+| **Observation window** | September 2026, from 9 September. Employer boards: three collections, the last on 25 September (UTC). Aggregators: the 9–12 September campaign, plus one general query re-run on 26 September |
+| **Status**             | Built and tested end to end: 16 models, 179 data tests (199 pass, 1 warning), all layer reconciliations OK; marts exported to ADLS `curated/` as Parquet (Section 15) |
 
 ## 1. Analytics goal
 
@@ -55,11 +56,11 @@ One idea per question.
 | Q6     | What percentage of the job postings being advertised in Saudi Arabia during September 2026 were fully remote?                                                 | Postings | Known for Ashby, Workable, SmartRecruiters and JSearch; not available for Jooble or Greenhouse, excluded from the percentage. Hybrid counts as not remote                                                                                                       |
 | Q7     | Which experience level was requested most by job postings being advertised in each Saudi region during September 2026, with and without recruitment agencies? | Postings | Workable and SmartRecruiters only. Shown both ways, because two agencies hold 54% of the sampled postings with a known level (Section 14)                                                                                                                       |
 | Q8     | How many new job postings were posted in Saudi Arabia in each week of September 2026?                                                                         | Postings | ATS sources only: the only sources collected on the same dates through the month (JSearch’s latest posting date is 10 September; Jooble has no posting date). Weeks run Sunday to Saturday; the first and last weeks are partial (Section 9)                    |
-| Q9     | For job openings taken down during September 2026, what was the median number of days between their posting date and their removal?                           | Openings | ATS sources with two snapshots: 130 ATS listings disappeared (Section 12.1); the number of openings is known after matching. Median, because some postings date back to 2018. Per opening, because an employer can close one city of a posting and keep another |
+| Q9     | For job openings taken down during September 2026, what was the median number of days between their posting date and their removal?                           | Openings | ATS sources with two snapshots: 142 ATS listings disappeared (Section 12.1), 141 openings after matching. Median, because some postings date back to 2018. Per opening, because an employer can close one city of a posting and keep another |
 
-**Salary** is not asked about. None of the four employer-board payloads we collect has a salary field: Ashby returns salary bands only when called with `includeCompensation=true`, and `ashby.py` sets it to `false`. JSearch’s `job_salary_string` is empty in all 3,089 collected rows, and Jooble’s `salary` is free text that is about 96% empty (`source_investigation.md` §3.2), e.g. `"SAR 2500 - 3000 per month"`. The text is kept for display as `salary_text` in `dim_job_posting`, never as a number.
+**Salary** is not asked about. None of the four employer-board payloads we collect has a salary field: Ashby returns salary bands only when called with `includeCompensation=true`, and `ashby.py` sets it to `false`. JSearch’s `job_salary_string` is empty in all 3,089 rows of the September campaign, and Jooble’s `salary` is free text that is about 96% empty (`source_investigation.md` §3.2), e.g. `"SAR 2500 - 3000 per month"`. The text is kept for display as `salary_text` in `dim_job_posting`, never as a number.
 
-**Skills and technologies** are not modelled, although the brief mentions them: 64% of staged listings are Jooble snippets (8,262 of 12,928; 179 to 284 characters in the sample), many titles and descriptions are in Arabic, and skills are many-to-many with postings, which needs a bridge table next to the star. Section 14 describes the extension.
+**Skills and technologies** are not modelled, although the brief mentions them: 65% of staged listings are Jooble snippets (8,928 of 13,777; 179 to 284 characters in the sample), many titles and descriptions are in Arabic, and skills are many-to-many with postings, which needs a bridge table next to the star. Section 14 describes the extension.
 
 ## 3. Business process
 
@@ -74,7 +75,7 @@ The star schema measures this process at the level of the job opening: one posti
 - **Location.** A city when the source names one; otherwise the region, or Saudi Arabia as a whole (Section 6, `dim_location`).
 - **Multi-city postings.** Workable publishes a posting open in several cities as one listing per city, and each city is its own opening. The other sources give one location per listing; when its text names several Saudi cities, the first one is used. This is rare in the samples: one Ashby listing names two cities (`"Riyadh / Jeddah"`) and one more lists them only in `secondaryLocations`, which staging keeps but does not use (2 of 47); one SmartRecruiters listing of 908 says `"Multiple Cities"`; no JSearch, Jooble or Greenhouse row names two Saudi cities.
 - **The grain is tested.** `posting_sk` + `location_sk` must be unique in `fct_jobs`. The test fails if two cities of one Workable posting resolve to the same location, for example two cities missing from `seed_city_mapping` that both fall to country level. The samples hold one such posting (As Sulayyil and Al Mubarraz, both to be added to the seed).
-- **Expected rows.** Fewer openings than the 12,928 staged listings: the difference is the cross-source overlap resolved by matching (Section 8). Fewer postings than openings: the difference is the extra cities of multi-city postings.
+- **Expected rows.** Fewer openings than the staged listings (13,255 openings from 13,777 listings in the 26 September build): the difference is the cross-source overlap resolved by matching (Section 8). Fewer postings than openings: the difference is the extra cities of multi-city postings.
 - **Why the opening and not the listing.** Counting listings would count a job published on three sources three times, so “how many jobs were advertised in Riyadh?” would be wrong. The link from each opening back to its listings is kept in `int_jobs_matched` for lineage, and the fact carries the listing counts (Section 7.1), so no second fact table is needed.
 
 ### Fact table type
@@ -223,6 +224,8 @@ No source reports whether a posting was filled, closed, or deleted. The pipeline
 | ATS             | Missing from the latest collection of its own board. A board’s file lists every open job, so this is direct evidence that the posting was taken down | Yes             |
 | Aggregator      | Not returned by any query within 7 days of that source’s latest collection. Queries do not return every job on every run, so this is weak evidence   | No              |
 
+> **Provisional (26 September 2026).** The 26 September aggregator runs repeated only the general query (`L0_general_sa`), not the 9–12 September campaign (23 locations and 24 title keywords on Jooble; the `date_posted` layers on JSearch). That query did not return most of the campaign's listings, so they are marked inactive here although nothing shows they closed: 1,000 of 8,928 Jooble and 181 of 2,104 JSearch listings are active. The split will be recomputed after the campaign is repeated. None of Q1–Q9 depends on it: Q1–Q8 use first and last seen dates, and Q9 uses ATS disappearances only.
+
 An opening with at least one ATS listing takes its status from its ATS listings only; an opening found only on aggregators takes it from those:
 
     -- fct_jobs, grouped by job_sk
@@ -232,7 +235,7 @@ An opening with at least one ATS listing takes its status from its ATS listings 
         else boolor_agg(is_active)
     end as is_active
 
-Version 1 used “active if any listing is active”, so a job that was gone from its Workable board on 24 September stayed active through a Jooble copy collected on 9 September, and dropped out of Q9. The status is as of each source’s latest collection: 24 September for openings with an ATS listing, 9 September for Jooble-only and 11 September for JSearch-only openings.
+Version 1 used “active if any listing is active”, so a job that was gone from its Workable board on 24 September stayed active through a Jooble copy collected on 9 September, and dropped out of Q9. The status is as of each source’s latest collection: 25 September for openings with an ATS listing, 26 September for aggregator-only openings (provisional, see the note above).
 
 The removal date is known only to within the gap between two collections: `last_seen_date` is the last day the opening was still seen.
 
@@ -451,13 +454,14 @@ The two rules that need more than one line:
 | **Step**                               | **Implementation**                                                                                                                                                                                                 | **Status**                                                                |
 |----------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
 | 1\. Stage source data                  | `stg_*` — one model per source: rename, cast, flatten, deduplicate within source, enforce Saudi scope                                                                                                              | ✅ Built, including the additions in Section 10.1                         |
-| 2\. Join and filter records            | `int_job_listings` — `union all` of the six staging models on one shared column list, written out so each source’s own columns (Greenhouse brand, Workable telecommuting, JSearch publisher) are mapped explicitly | Written, but not in branch `rimaz-reorg-pipeline`; to update (Section 15) |
-| 3\. Business rules and standardization | `int_job_listings` — HTML cleaning; city, region, category, company and experience through seeds; `publisher`, `remote_status`, `posting_sk`                                                                       | Seeds loaded and tested                                                   |
-| 4\. Matching and survivorship          | `int_jobs_matched` — `job_sk` and the representative listing (Section 8)                                                                                                                                           | Designed                                                                  |
-| 5\. Load dimension tables              | The six `dim_*`                                                                                                                                                                                                    | Designed                                                                  |
-| 6\. Load fact table                    | `fct_jobs`                                                                                                                                                                                                         | Designed                                                                  |
-| 7\. Data quality checks                | `dbt build`: tests at every layer                                                                                                                                                                                  | ✅ Staging and seeds                                                      |
-| 8\. Hand-over                          | Marts exported to `final_datasets/` with a README: columns, row counts, generation date                                                                                                                            | Planned                                                                   |
+| 2\. Join and filter records            | `int_job_listings` — `union all` of the six staging models on one shared column list, written out so each source’s own columns (Greenhouse brand, Workable telecommuting, JSearch publisher) are mapped explicitly | ✅ Built |
+| 3\. Business rules and standardization | `int_job_listings` — HTML cleaning; city, region, category, company and experience through seeds; `publisher`, `remote_status`, `posting_sk` | ✅ Built |
+| 4\. Matching and survivorship          | `int_jobs_matched` — `job_sk` and the representative listing; `int_job_openings` — survivorship, once (Section 8) | ✅ Built |
+| 5\. Load dimension tables              | The six `dim_*` | ✅ Built |
+| 6\. Load fact table                    | `fct_jobs` | ✅ Built |
+| 7\. Data quality checks                | `dbt build`: tests at every layer; `analyses/model_checks.sql` and `analyses/pipeline_audit.sql` | ✅ 199 pass, 1 warning (one empty normalized title) |
+| 8\. Hand-over                          | Marts exported to `final_datasets/` with a README: columns, row counts, generation date | Planned after the final numbers |
+| 9\. Export to ADLS                     | `dbt run-operation export_marts`: the seven marts unloaded as Parquet to `curated/<table>/export_date=YYYY-MM-DD/`, one file per table per run | ✅ Runs as the last pipeline step |
 
 Load order:
 
@@ -558,30 +562,51 @@ Excerpt of the marts tests (dbt 1.10+ syntax, as in `seeds/schema.yml`):
 
 ### 12.1 Pipeline audit — RAW to staging
 
-Recorded 2026-09-25, on two snapshots per ATS source. RAW rows count every landed copy of every posting across all snapshots.
+Recorded 2026-09-26 with `analyses/pipeline_audit.sql`, after the third ATS collection and the aggregator re-run. RAW rows count every landed copy of every posting across all collections. Dates are the `ingest_date` partitions (UTC); a campaign that ran past midnight UTC spans two of them.
 
-| **Source**      | **Snapshots**          | **RAW rows** | **Staging rows** | **Removed** | **Why removed**                                                                                                                 |
-|-----------------|------------------------|--------------|------------------|-------------|---------------------------------------------------------------------------------------------------------------------------------|
-| Ashby           | 2026-09-16, 2026-09-24 | 94           | 49               | 45          | Same posting in both snapshots; non-Saudi posting (`"Thailand (Remote)"`)                                                       |
-| Greenhouse      | 2026-09-09, 2026-09-24 | 356          | 215              | 141         | Same posting in both snapshots or on two boards; **24 non-Saudi postings** (Dubai, Cairo…) from the unfiltered 2026-09-09 files |
-| SmartRecruiters | 2026-09-19, 2026-09-24 | 1,825        | 943              | 882         | Same posting in both snapshots                                                                                                  |
-| Workable        | 2026-09-16, 2026-09-24 | 2,950        | 1,535            | 1,415       | Same posting (shortcode + city) in both snapshots                                                                               |
-| Jooble          | 2026-09-09             | 14,010       | 8,262            | 5,748       | Copies from overlapping queries                                                                                                 |
-| JSearch         | 2026-09-10, 2026-09-11 | 3,089        | 1,924            | 1,165       | Copies from overlapping `date_posted` windows                                                                                   |
-| **Total**       |                        | **22,324**   | **12,928**       | **9,396**   |                                                                                                                                 |
+| **Source**      | **Landed files** | **Partitions** | **RAW rows** | **Out of scope** | **Within-source duplicates** | **Staging rows** |
+|-----------------|------------------|----------------|--------------|------------------|------------------------------|------------------|
+| Ashby           | 31               | 3              | 139          | 3                | 87                           | 49               |
+| Greenhouse      | 51               | 3              | 527          | 24               | 286                          | 217              |
+| SmartRecruiters | 42               | 3              | 2,734        | 0                | 1,790                        | 944              |
+| Workable        | 33               | 3              | 4,429        | 0                | 2,894                        | 1,535            |
+| Jooble          | 821              | 3              | 15,010       | 0                | 6,082                        | 8,928            |
+| JSearch         | 367              | 4              | 3,283        | 0                | 1,179                        | 2,104            |
+| **Total**       | **1,345**        |                | **26,122**   | **27**           | **12,318**                   | **13,777**       |
 
-Status of the staged ATS postings after the second snapshot:
+Out of scope: non-Saudi postings (24 from the unfiltered Greenhouse files of 2026-09-09, 3 on Ashby). Duplicates: the same posting in several collections, on two boards, or returned by overlapping queries. One JSearch page failed and is kept in RAW.
+
+Status of the staged listings after the latest collection:
 
 | **Source**      | **Staged** | **Active** | **Disappeared** |
 |-----------------|------------|------------|-----------------|
-| Ashby           | 49         | 46         | 3               |
-| Greenhouse      | 215        | 170        | 45              |
-| SmartRecruiters | 943        | 917        | 26              |
+| Ashby           | 49         | 44         | 5               |
+| Greenhouse      | 217        | 171        | 46              |
+| SmartRecruiters | 944        | 909        | 35              |
 | Workable        | 1,535      | 1,479      | 56              |
+| Jooble          | 8,928      | 1,000 *    | 7,928 *         |
+| JSearch         | 2,104      | 181 *      | 1,923 *         |
 
-Active counts equal the postings each extraction script collected on 2026-09-24. The 130 disappeared listings are the input of Q9; after matching, Q9 counts openings, so its base can change slightly.
+\* Provisional (Section 7.2): not returned by the general query re-run on 26 September, which is not evidence that the job closed.
 
-This section is the single source of these numbers. The audit query is to be kept as `analyses/pipeline_audit.sql`, so it can be re-run after every collection, and `dbt/README.md` should point here instead of repeating its older table (12,797 listings, dated 23 September).
+ATS active counts equal the Saudi postings each extraction script collected on 2026-09-25. The 142 disappeared ATS listings are the input of Q9, which counts 141 openings after matching.
+
+This section is the single source of these numbers; `analyses/pipeline_audit.sql` re-creates them after every collection.
+
+### 12.3 Reconciliation of the layers
+
+`analyses/model_checks.sql` checks that every layer adds up. On the 26 September build all 16 checks pass:
+
+| **Check**                                                        | **Value**       |
+|------------------------------------------------------------------|-----------------|
+| Staging rows = `int_job_listings` rows = `int_jobs_matched` rows | 13,777          |
+| Distinct `job_sk` = `int_job_openings` rows = `fct_jobs` rows    | 13,255          |
+| One representative listing per opening                           | 13,255          |
+| `SUM(listing_count)` and the six per-source counts               | 13,777          |
+| `SUM(copies_landed)` in the fact = in the listings               | 26,095          |
+| Postings in the fact = `dim_job_posting` rows (without Unknown)  | 12,803          |
+| Openings with negative `days_open`                               | 0               |
+| Unknown member in each of the six dimensions                     | 1 each          |
 
 ### 12.2 Quality measures from the star
 
@@ -629,8 +654,8 @@ Figures that exist only before the marts — RAW rows, failed pages, out-of-scop
 - **Cross-source overlap is a lower bound.** Exact matching misses some duplicates, and recall cannot be measured without a shared identifier.
 - **Partial field coverage.** Experience level exists only in Workable and SmartRecruiters (about 14% of listings: 1,792 with a known level), so Q7 describes those sources’ postings. Jooble has no posting date, employment type or workplace signal; Greenhouse has no workplace signal.
 - **Recruitment agencies advertise for clients.** Eram Talent (over half of Workable) and Jobs for Humanity (over half of SmartRecruiters) are flagged and excluded from Q3, but their postings count in every other question. In the samples they hold 785 of the 1,446 postings with a known experience level (54%), so Q7 is shown with and without agencies.
-- **JSearch was collected only on 10 and 11 September** (latest posting date: 10 September). Counting it in Q8 would show a false drop after 11 September, so Q8 uses ATS sources only. A JSearch collection after 24 September would allow it to be added back.
-- **The last employer-board collection was on 24 September.** A job posted after it was never observed, so the week starting 20 September is partial in Q8 and later weeks are not reported. Aggregator-only openings have their `is_active` as of 9 September (Jooble) and 11 September (JSearch).
+- **Aggregators were collected as one campaign (9–12 September) plus one general query on 26 September.** JSearch’s latest posting date in the campaign is 10 September, so Q8 uses ATS sources only. The active/disappeared split of aggregator listings is provisional until the campaign is repeated (Section 7.2).
+- **The last employer-board collection was on 25 September (UTC).** A job posted after it was never observed, so the week starting 20 September is partial in Q8 and later weeks are not reported.
 - **Very old postings.** ATS postings date back to 2018 (SmartRecruiters) and 2024 (Workable); the median posting was 94–137 days old when first collected. Q9 therefore reports the median.
 - **About 20% of titles are uncategorized** because they are generic (`Specialist`, `Supervisor`). Ties between two categories of equal priority are resolved by keyword length, then name: 48 of the 2,832 sampled titles (1.7%) tie, most between Engineering and Operations (e.g. `Planning Engineer`).
 - **Arabic text.** The category seed has no Arabic keyword, so all 24 Arabic-only titles in the samples fall into `Other`; the company seed has no Arabic alias; and titles are not translated, so an Arabic listing matches only the same Arabic title. About 20 Arabic keywords (e.g. محاسب، مهندس، ممرض، مبيعات) and Arabic aliases for the largest companies are planned.
@@ -648,20 +673,33 @@ Figures that exist only before the marts — RAW rows, failed pages, out-of-scop
 
 ## 15. Build status
 
-| **Object**                                                                                              | **Status**                                                                                                                                                                                                                                                                                                                                                                     |
-|---------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `stg_*` (6)                                                                                             | ✅ Built on two snapshots, all tests passing. Added on 25 September: `is_remote` on JSearch, `copies_landed` on all six, the `country_raw = 'SA'` test on JSearch (Section 10.1)                                                                                                                                                                                               |
-| Seeds (4): `seed_city_mapping`, `seed_job_categories`, `seed_company_aliases`, `seed_experience_levels` | ✅ Loaded, 10 tests passing. Jooble locations checked against the city seed; the 11 unmatched values (Al Qassim Region, Duba, AMAALA…) were added. Only `saudi arabia` and `remote` should remain unmatched (re-check pending). The four Workable cities (Section 6) were added to the seed on 25 September. To add: about 20 Arabic category keywords, Arabic company aliases |
-| `seed_sources`                                                                                          | ✅ Loaded and tested (Section 10.2)                                                                                                                                                                                                                                                                                                                                            |
-| Macros `normalize_text()`, `normalize_company()`, `strip_html()`                                        | Referenced by the seed descriptions and this document; not in this branch                                                                                                                                                                                                                                                                                                      |
-| Macro `generate_schema_name()` and `tests/generic/has_one_unknown_member.sql`                           | generate_schema_name ✅ added and in use; has_one_unknown_member to add with the marts                                                                                                                                                                                                                                                                                         |
-| `int_job_listings`                                                                                      | Written, but not in branch `rimaz-reorg-pipeline`; to update with `publisher`, `remote_status`, `location_level`, `posting_sk`, the company and experience seed joins, and the category tie-break                                                                                                                                                                              |
-| `int_jobs_matched`                                                                                      | Designed (Section 8)                                                                                                                                                                                                                                                                                                                                                           |
-| `dim_job_posting`, `dim_company`, `dim_location`, `dim_date`, `dim_source`, `dim_job_attributes`        | Designed (Section 6)                                                                                                                                                                                                                                                                                                                                                           |
-| `fct_jobs`                                                                                              | Designed (Section 7)                                                                                                                                                                                                                                                                                                                                                           |
-| `final_datasets/`                                                                                       | Planned (Section 11)                                                                                                                                                                                                                                                                                                                                                           |
+As of the 26 September build (`run_id 20260926T121942Z`).
+
+| **Object** | **Status** |
+|------------|------------|
+| `stg_*` (6) | ✅ Built on three ATS collections and two aggregator runs; all tests pass |
+| Seeds (5) | ✅ Loaded and tested. `seed_city_mapping` 219 aliases (region names unified, e.g. `Hail`); `seed_company_aliases` 37; `seed_job_categories` 171; `seed_experience_levels` 7; `seed_sources` 6 |
+| Macros | ✅ `normalize_text`, `normalize_title`, `normalize_company`, `strip_html`, `normalize_employment_type` (combined values such as `Full-time and Part-time` added 26 September), `generate_schema_name`, `load_raw`, `export_marts` |
+| `int_job_listings`, `int_jobs_matched`, `int_job_openings` | ✅ Built: 13,777 listings, 13,255 openings |
+| `dim_job_posting`, `dim_company`, `dim_location`, `dim_date`, `dim_source`, `dim_job_attributes` | ✅ Built: 12,804, 1,939, 56, 3,001, 7 and 400 rows (each with its Unknown member) |
+| `fct_jobs` | ✅ Built: 13,255 rows |
+| Tests | ✅ 179 data tests: 199 nodes pass, 1 warning (one listing whose title normalizes to empty) |
+| Pipeline runner | ✅ `pipeline/run_pipeline.py`: extract, upload, load, freshness, build, export; every run logged in `run_log.csv` |
+| ADLS `curated/` | ✅ Seven Parquet files per export, under `export_date=` partitions |
+| `final_datasets/` | Planned after the final numbers |
+| Aggregator campaign re-run | Pending; the aggregator active/disappeared split is provisional until then |
 
 ## 16. Changes from version 1
+
+### Changes in version 2.1 (26 September)
+
+- Numbers updated to the 26 September build: third ATS collection (25 September) and an aggregator general-query re-run (26 September).
+- Section 7.2: provisional note on the aggregator active/disappeared split.
+- Section 12.1 re-recorded; Section 12.3 (layer reconciliation) and Section 17 (results) added.
+- Sections 11 and 15: build status updated; export of the marts to ADLS `curated/` added as step 9.
+- Employment type: combined values (`Full-time and Part-time`) kept as their own value.
+
+### Version 2 compared with version 1
 
 | **Area**                   | **Version 1**                                                                                                                        | **Version 2**                                                                                              | **Reason**                                                                     |
 |----------------------------|--------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
@@ -683,3 +721,19 @@ Figures that exist only before the marts — RAW rows, failed pages, out-of-scop
 | Q7, Q8, Q9                 | —                                                                                                                                    | Q7 with and without agencies; partial weeks marked in Q8; Q9 per opening after matching                    | Agencies hold 54% of Q7’s base in the samples; last collection on 24 September |
 | Corrected statements       | Company seed “covers Arabic and English spellings”; “no ATS source has a salary field”; `job_sk` “does not change” when rules change | Corrected in Sections 6, 2 and 8.3                                                                         | Not supported by the seed, the extraction script or the matching rules         |
 | Scope                      | Skills not mentioned                                                                                                                 | Declared out of scope, with an extension path                                                              | The brief lists skills and technologies                                        |
+
+## 17. Results (26 September build)
+
+From `analyses/business_questions.sql`. Q1–Q9 do not use the provisional aggregator status (Section 7.2).
+
+| **Question** | **Result** |
+|--------------|------------|
+| Q1 | 12,803 unique job postings, 13,255 job openings |
+| Q2 | Riyadh 6,627 · Jeddah 1,412 · Dammam 1,042 · Al Khobar 735 · Jubail 717 · Makkah 452 · Dhahran 366 · Madinah 354 · Umluj 229 · Yanbu 168 |
+| Q3 (agencies excluded) | Qiddiya Investment Company 390 · AccorHotel 332 · JASARA PMC 217 · AtkinsRéalis 195 · Marriott 159 · Aramco Overseas Company 155 · Lucid Motors 106 · BEC Arabia 97 · TAWANTECH 96 · Apex Operations 88 |
+| Q4 | Other 2,426 · Construction & Trades 1,816 · Engineering 1,212 · Management 1,147 · Sales & Business Development 1,082 (19 categories) |
+| Q5 | 92.1% full-time (3,461 of 3,758 postings with a known type) |
+| Q6 | 2.3% fully remote (94 of 4,122 postings with a known status) |
+| Q7 | Mid-Senior leads in Riyadh (497 of 899) and the Eastern Province (158 of 281); Entry in Makkah (102 of 253) and Tabuk (102 of 181). Without agencies the Eastern Province falls to 25 postings with a known level. Regions with fewer than 20 postings with a known level are not interpreted |
+| Q8 (ATS only) | Weeks from 30 Aug: 71 (partial) · 120 · 118 · 100 (partial) |
+| Q9 (ATS only) | 141 openings taken down; median 37 days from posting to last seen (mean 55.5, for reference) |

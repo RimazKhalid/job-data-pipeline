@@ -15,6 +15,11 @@
 --   4. category_hits seed_job_categories lookup with a deterministic tie-break.
 --   5. final select  company_norm, location_level, job_category, aggregator is_active.
 
+    -- PROVISIONAL (26 Sep 2026): the 26 Sep aggregator runs repeated only the general query
+    -- (L0_general_sa), not the 9-11 Sep campaign, so most earlier aggregator listings are marked
+    -- inactive here because that query did not return them, not because they closed. To be
+    -- revisited once the full campaign has been repeated.
+
 with unioned as (
 
     select source_record_sk, source_name, source_job_id,
