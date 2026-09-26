@@ -104,7 +104,7 @@ order by variant, postings_with_known_level desc;
 
 -- Q8. How many new job postings were posted in each week of September 2026? (ATS sources only)
 -- Weeks start on Sunday. The week of 30 Aug covers 1–5 Sep only; the week of 20 Sep ends at the
--- last collection (Thu 24 Sep). Both are partial.
+-- last employer-board collection (Fri 25 Sep, UTC). Both are partial.
 select
     d.week_start_date,
     count(distinct f.posting_sk)                                     as new_postings,
@@ -112,7 +112,7 @@ select
 from fct_jobs f
 join dim_date d   on f.posting_date_sk = d.date_sk
 join dim_source s on f.primary_source_sk = s.source_sk
-where f.posting_date_sk between 20260901 and 20260924
+where f.posting_date_sk between 20260901 and 20260925
   and s.source_type = 'ATS'
 group by d.week_start_date
 order by d.week_start_date;

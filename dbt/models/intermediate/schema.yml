@@ -78,9 +78,16 @@ models:
         data_tests:
           - not_null
       - name: is_active
-        description: "ATS: present in the latest pull of its own board. Aggregators: seen within 7 days of the source's latest collection."
+        description: "ATS: present in the latest pull of its own board. Aggregators: null (unknown), because a query result is not a full list of open jobs."
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                where: "source_type = 'ATS'"
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "is null"
+              config:
+                where: "source_type = 'Aggregator'"
       - name: title_norm
         description: "Matching key only: lower-case, punctuation, bracketed notes and hiring/location noise removed."
         data_tests:

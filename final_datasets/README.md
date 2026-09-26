@@ -6,11 +6,11 @@ Power BI reads. One CSV per table, UTF-8, with a header row.
 
 | | |
 |---|---|
-| **Generated** | 2026-09-26, from the pipeline run `20260926T121942Z` on branch `RimazTrayingIntermediate` |
+| **Generated** | 2026-09-26, from the pipeline run `20260926T171744Z` on branch `RimazTrayingIntermediate` |
 | **Observation window** | September 2026: employer boards collected three times (last on 25 September, UTC); aggregators collected as one campaign on 9–12 September plus one general query on 26 September |
 | **Sources** | Ashby, Greenhouse, SmartRecruiters, Workable (employer job boards); Jooble, JSearch (aggregators) |
 | **Model** | `dbt/data_modeling/data_model.md` |
-| **Also in ADLS** | The same seven tables as Parquet, `stjobdata26/curated/<table>/export_date=2026-09-26/` |
+| **Also in ADLS** | The same seven tables as Parquet, `stjobdata26/curated/<table>/export_date=2026-09-26/` (files ending `_20260926T171744Z.parquet`) |
 
 ## Files
 
@@ -27,11 +27,9 @@ Power BI reads. One CSV per table, UTF-8, with a header row.
 Totals: 13,777 listings → 13,255 job openings → 12,803 job postings. 444 openings (3.3%) were
 found on more than one source; 141 were taken down during September (employer-board evidence).
 
-> **Provisional.** `is_active` for openings found on aggregators only (`status_basis = 'aggregator
-> query'`) is not final: the 26 September re-run repeated only the general query, so most listings
-> of the 9–12 September campaign are marked inactive because that query did not return them, not
-> because they closed. Use `status_basis = 'employer board'` for any count of active or taken-down
-> openings until the campaign is repeated. No other column is affected.
+`is_active` is known only for openings with an employer-board listing (`status_basis = 'employer
+board'`: 2,596 active, 141 taken down). It is empty for the 10,518 openings found on aggregators
+only: a search result is not a full list of open jobs.
 
 ## Columns
 
@@ -52,8 +50,8 @@ found on more than one source; 141 were taken down during September (employer-bo
 | `copies_landed` | Copies of those listings landed in RAW before deduplication |
 | `source_count` | Distinct sources among the listings (1–6). Non-additive |
 | `days_open` | Days from posting date to last seen; empty when there is no posting date. Summarize with a median |
-| `is_active` | Still advertised at the last collection (employer-board evidence first) |
-| `status_basis` | What `is_active` is based on: `employer board` (the opening has an ATS listing) or `aggregator query` (provisional, see above) |
+| `is_active` | Still advertised at the last collection of the employer's board; empty when the opening was found on aggregators only |
+| `status_basis` | What `is_active` is based on: `employer board` (the opening has an ATS listing) or `aggregator query` (aggregators only; `is_active` is empty) |
 
 ### Dimensions
 
@@ -76,5 +74,5 @@ job_pipeline_db.marts` after the final build.
 
 See `dbt/data_modeling/data_model.md`, Section 14. In short: cross-source overlap is a lower
 bound (exact matching only); experience level exists only for Workable and SmartRecruiters;
-Jooble has no posting date and a snippet description; aggregator status is provisional (see
-above).
+Jooble has no posting date and a snippet description; aggregator-only openings have no
+active/taken-down status.

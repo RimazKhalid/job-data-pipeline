@@ -1,11 +1,11 @@
-  <!-- pipeline/ingestion/collection_methodology.md -->
-  # Collection methodology
+<!-- pipeline/ingestion/collection_methodology.md -->
+# Collection methodology
 
 How the six extraction scripts collect job postings, and why each family of sources is collected
 differently. Every statement below refers to the scripts in `pipeline/ingestion/` and
 `pipeline/common/` as they exist in this repo. Source selection (which sources, and why) is in
-  [`../../source_investigation/source_investigation.md`](../../source_investigation/source_investigation.md)
-  
+[`../../source_investigation/source_investigation.md`](../../source_investigation/source_investigation.md).
+
 | Family | Sources | One request returns | Scripts |
 |---|---|---|---|
 | **Employer job boards (ATS)** | Ashby, Greenhouse, SmartRecruiters, Workable | One company's whole board | `ashby/ashby.py`, `greenhouse/greenhouse.py`, `smartrecruiters/smartrecruiters.py`, `workable/workable.py` |
@@ -135,7 +135,7 @@ In `jooble/matrix.py`'s `l1b` layer (`_l1b_preflight`), a location is skipped if
   result set when it does not recognise a location string, rather than returning an error; a
   `totalCount` at the general-query scale is the signature of that fallback.
 
-The standalone probes (`probes/jooble_probe_locations.py`, `probes/jooble_probe_keywords.py`) used
+The standalone probes (`probes/jooble/jooble_probe_locations.py`, `probes/jooble/jooble_probe_keywords.py`) used
 the same "location or keyword ignored" signal to build the candidate lists before the matrix ran,
 with an extra `capped` verdict in the keyword probe (`totalCount > 1000`) for keywords that would
 themselves hit the 1,000-record ceiling.
@@ -205,11 +205,12 @@ build and export. The aggregators run only when named, because of their quotas:
 A job missing from a later ATS collection was taken down: the board lists every open job. For an
 aggregator, a job missing from a later run shows nothing unless **the same query** was repeated,
 and even then ranking changes between days. The 26 September runs repeated only `L0_general_sa`,
-which returns about 1,000 listings, so most of the campaign's listings were not returned and are
-currently marked inactive (`data_model.md`, Section 7.2, provisional).
+which returns about 1,000 listings, so most of the campaign's listings were not returned. For this
+reason the model gives aggregator-only openings no status: `is_active` is null
+(`data_model.md`, Section 7.2), and closures are counted from employer boards only.
 
-To make the comparison meaningful, repeat the campaign through the matrix runners with the same
-`QUERY_LABEL`s and query bodies, and check before starting:
+Repeating the campaign adds listings and freshness, not status. To repeat it, run the matrix
+runners with the same `QUERY_LABEL`s and query bodies, and check before starting:
 
 1. **Quota.** The Jooble campaign used about 770 requests, more than one key's lifetime quota;
    count the pages per `QUERY_LABEL` in RAW (`raw_jooble`, `raw_jsearch`) and make sure the keys in

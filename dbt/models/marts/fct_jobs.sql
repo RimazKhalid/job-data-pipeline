@@ -11,9 +11,9 @@
 --   source_count              distinct sources among the listings (non-additive)
 --   days_open                 posting date to last seen; summarized with a median (non-additive)
 -- Job postings are counted as COUNT(DISTINCT posting_sk).
--- is_active is as of the last collection of the opening's source: status_basis says whether that
--- is the employer's board or an aggregator query. Split "active" counts by it. Aggregator status
--- is provisional (see int_job_listings): report closures from 'employer board' only.
+-- is_active is as of the last collection of the employer's board (status_basis = 'employer board').
+-- It is null for openings found on aggregators only (status_basis = 'aggregator query'): a query
+-- result is not a full list, so absence from a later run is not evidence of closure.
 
 select
     o.job_sk,

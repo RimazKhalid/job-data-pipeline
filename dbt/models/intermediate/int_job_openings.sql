@@ -8,7 +8,8 @@
 --   Taken as a pair                   workplace_type and remote_status, from the first listing
 --                                     (by priority) whose remote_status is known
 --   ATS first                         posting_date: earliest ATS date, else earliest of any
---                                     is_active: from ATS listings when there is one (Section 7.2)
+--                                     is_active: from ATS listings only; null (unknown) when
+--                                     the opening was found on aggregators only (Section 7.2)
 --   Across all listings               first_seen_at (min), last_seen_at (max), listing counts,
 --                                     copies_landed, source_count
 --
@@ -49,15 +50,12 @@ aggregated as (
         min(first_seen_at)                                                        as first_seen_at,
         max(last_seen_at)                                                         as last_seen_at,
 
-        case
-            when count_if(source_type = 'ATS') > 0
-                then boolor_agg(iff(source_type = 'ATS', is_active, null))   -- employer-board evidence only
-            else boolor_agg(is_active)                                        -- aggregator-only openings
-        end                                                                       as is_active,
-       
-        -- what "active" is based on: the employer's own board (latest ATS collection) or an
-        -- aggregator query (latest run of that aggregator). 'aggregator query' is PROVISIONAL:
-        -- see the note on is_active in int_job_listings.
+        -- employer-board evidence only. boolor_agg ignores nulls and returns null when every
+        -- value is null, so an opening found on aggregators only gets is_active = null (unknown)
+        boolor_agg(iff(source_type = 'ATS', is_active, null))                     as is_active,
+
+        -- what is_active is based on: 'employer board' (the opening has an ATS listing, is_active
+        -- is true / false) or 'aggregator query' (aggregators only, is_active is null)
         iff(count_if(source_type = 'ATS') > 0, 'employer board', 'aggregator query')
                                                                                   as status_basis,
 

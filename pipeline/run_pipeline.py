@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 """One command for the whole pipeline: extract -> land in ADLS -> COPY INTO RAW -> dbt -> export to ADLS.
 
-Steps, in order. Each one stops the run when it fails, except freshness, which only reports:
+Steps, in order. Each one stops the run when it fails (policy: dbt/DATA_QUALITY.md):
 
     extract    the extraction script of each selected source
     upload     pipeline/landing/upload_to_adls.py            (new files only, never overwrites)
     load       dbt run-operation load_raw                     (COPY INTO RAW, new files only)
-    freshness  dbt source freshness                           (report only)
+    freshness  dbt source freshness                           (warnings print; errors stop the run)
     build      dbt build                                      (seeds, models and every test)
     export     dbt run-operation export_marts                 (MARTS -> ADLS curated/, Parquet)
 
@@ -72,12 +72,22 @@ def run(label, cmd, cwd, dry_run):
 
 def write_run_log(row):
     os.makedirs(os.path.dirname(RUN_LOG), exist_ok=True)
-    new_file = not os.path.exists(RUN_LOG)
-    with open(RUN_LOG, "a", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(row))
-        if new_file:
-            w.writeheader()
-        w.writerow(row)
+    # The run log must never crash a finished run. If run_log.csv is locked (open in Excel),
+    # the row goes to run_log_pending.csv next to it; copy it across once Excel is closed.
+    for path in (RUN_LOG, RUN_LOG.replace(".csv", "_pending.csv")):
+        try:
+            new_file = not os.path.exists(path)
+            with open(path, "a", encoding="utf-8-sig", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=list(row))
+                if new_file:
+                    w.writeheader()
+                w.writerow(row)
+            if path != RUN_LOG:
+                print("WARNING: %s is locked (open in Excel?); run logged to %s" % (RUN_LOG, path))
+            return
+        except PermissionError:
+            continue
+    print("WARNING: could not write the run log; row: %s" % row)
 
 
 def main():
@@ -112,8 +122,11 @@ def main():
             if run("COPY INTO RAW", dbt("run-operation", "load_raw"), DBT_DIR, args.dry_run):
                 failed_step = "load"
         elif step == "freshness":
-            if run("source freshness (report only)", dbt("source", "freshness"), DBT_DIR, args.dry_run):
-                warnings.append("source freshness reported stale sources; see the output above")
+            # warn_after only prints (exit code 0). error_after (employer boards older than 15 days,
+            # models/sources.yml) exits non-zero and stops the run before build, so is_active is
+            # never recomputed and exported from stale board snapshots.
+            if run("source freshness", dbt("source", "freshness"), DBT_DIR, args.dry_run):
+                failed_step = "freshness"
         elif step == "build":
             if run("dbt build", dbt("build"), DBT_DIR, args.dry_run):
                 failed_step = "build"

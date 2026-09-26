@@ -17,6 +17,10 @@ models:
       - dbt_utils.expression_is_true:
           arguments:
             expression: "first_seen_date_sk <= last_seen_date_sk"
+      # status is claimed only where an employer board gives evidence for it
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "iff(status_basis = 'employer board', is_active is not null, is_active is null)"
     columns:
       - name: job_sk
         description: "Key of the job opening: source_record_sk of its earliest listing."
@@ -114,11 +118,13 @@ models:
               arguments:
                 min_value: 0
       - name: is_active
-        description: "Still advertised at the last collection of its source. From employer-board listings when the opening has one."
+        description: "Still advertised at the last collection of the employer's board. Null (unknown) when the opening was found on aggregators only: a query result is not a full list of open jobs."
         data_tests:
-          - not_null
+          - not_null:
+              config:
+                where: "status_basis = 'employer board'"
       - name: status_basis
-        description: "What is_active is based on: 'employer board' (last collection 24 Sep) or 'aggregator query' (9-11 Sep). Split active counts by it."
+        description: "What is_active is based on: 'employer board' (the opening has an ATS listing; is_active is true or false) or 'aggregator query' (aggregators only; is_active is null)."
         data_tests:
           - not_null
           - accepted_values:

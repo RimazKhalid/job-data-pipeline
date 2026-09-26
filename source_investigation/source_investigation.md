@@ -1,5 +1,5 @@
-  <!-- source_investigation/source_investigation.md -->
-  # Source Investigation — Job Market Data Pipeline (Saudi Arabia)
+<!-- source_investigation/source_investigation.md -->
+# Source Investigation — Job Market Data Pipeline (Saudi Arabia)
 
 Which job-data sources were evaluated, which were selected or excluded and why, and what the
 selected sources turned out to contain once collected.
@@ -11,18 +11,15 @@ selected sources turned out to contain once collected.
 | **Investigation dates** | 31 August – 2 September 2026 (probes), updated with collection results on 26 September 2026 |
 | **Collected listings** | 13,777 unique listings after within-source deduplication (26 September build) |
 
-Files in this folder:
+Related files:
 
 | File | Content |
 |---|---|
-| `README.md` | This summary: decisions, collection results, and how the findings shaped the pipeline |
-| [`data_sources.md`](data_sources.md) | Full evaluation matrix written during the probes (fields, auth, limits, decision per source) |
-| [`jooble.md`](jooble.md) | Jooble collection report: query design, volumes, distributions, limitations |
-| [`jsearch.md`](jsearch.md) | JSearch collection report: query design, volumes, distributions, limitations |
+| `source_investigation.md` | This summary: decisions, collection results, and how the findings shaped the pipeline |
+| [`../pipeline/ingestion/collection_methodology.md`](../pipeline/ingestion/collection_methodology.md) | How each source is collected: endpoints, filters, retries, query layers, quotas |
 
-The probe scripts used for the evaluation are in [`../probes/`](../probes/).
+The Jooble and JSearch probe scripts are in [`../probes/`](../probes/).
 
-  | [`../pipeline/ingestion/collection_methodology.md`](../pipeline/ingestion/collection_methodology.md) | How each source is collected: endpoints, filters, retries, query layers, quotas |
 ---
 
 ## 1. Evaluation criteria
@@ -37,8 +34,7 @@ Each candidate was checked against the same questions before any collection code
 4. **Stable identifier.** A key that identifies the same posting across repeated collections.
 5. **Limits.** Authentication, rate limits, request quotas, result caps.
 
-Each source was probed with real requests; the results are recorded per source in
-`data_sources.md`.
+Each source was probed with real requests; the decision per source is in Section 2.
 
 ---
 
@@ -103,21 +99,21 @@ The six sources fall into two families, and the difference drives most of the pi
 | Greenhouse | 17 company boards, filtered to Saudi locations in the script (and in staging for the first collection) | 9, 24 and 25 Sep 2026 | 217 |
 | SmartRecruiters | 14 companies, Saudi postings through the API's `country=sa` filter | 19, 24 and 25 Sep 2026 | 944 |
 | Workable | 11 company accounts, filtered to Saudi Arabia in the script | 16, 24 and 25 Sep 2026 | 1,535 |
-| Jooble | Campaign: 23 locations, then 24 job-title keywords within Riyadh (see `jooble.md`). Re-run: the general query only | Campaign 9–10 Sep; re-run 26 Sep 2026 | 8,928 |
-| JSearch | Campaign: `date_posted` windows (today / 3 days / week / month), up to 20 pages each (see `jsearch.md`). Re-run: the general query only | Campaign 10–12 Sep; re-run 26 Sep 2026 | 2,104 |
+| Jooble | Campaign: 23 locations, then 24 job-title keywords within Riyadh. Re-run: the general query only | Campaign 9–10 Sep; re-run 26 Sep 2026 | 8,928 |
+| JSearch | Campaign: `date_posted` windows (today / 3 days / week / month), up to 20 pages each. Re-run: the general query only | Campaign 10–12 Sep; re-run 26 Sep 2026 | 2,104 |
 | **Total** | | | **13,777** |
 
 The 26 September aggregator re-run repeated only the general query (`L0_general_sa`), not the
-campaign's layers, so it cannot show which campaign listings were taken down. Until the campaign is
-repeated, the aggregators' active/disappeared figures are provisional (`data_model.md`, Section 7.2).
+campaign's layers, so it cannot show which campaign listings were taken down. Aggregator listings
+therefore have no active/taken-down status (`data_model.md`, Section 7.2).
 
 ATS boards were found manually (no ATS offers a list of its clients): by web search for each
 platform's job-page pattern, then keeping boards that returned Saudi postings.
 
 ### 3.2 Field coverage after collection
 
-Measured in Snowflake on the staged data (share of listings, September 2026). The probes in
-`data_sources.md` were based on samples of 10–100 records; where the full data differs, this
+Measured in Snowflake on the staged data (share of listings, September 2026). The probes were
+based on samples of 10–100 records; where the full data differs, this
 table is the reference.
 
 | Field | Ashby | Greenhouse | SmartRecruiters | Workable | Jooble | JSearch |
@@ -158,7 +154,7 @@ Corrections to the probe results:
 | Recruitment agencies appear as the employer (Eram Talent, Jobs for Humanity, Hudson Manpower) | Agencies are flagged and excluded from the top-employers question | `seed_company_aliases`; data model Q3 |
 | Experience level exists only in Workable and SmartRecruiters | The experience question is answered for those sources only, and says so | Data model Q7 |
 | Salary is almost never provided | Salary is out of scope | Data model Section 2 |
-| Jooble caps each query at 1,000 results and allows 500 requests per key, lifetime | Queries were partitioned by location, then by title within Riyadh; a repeat Jooble collection must fit the remaining quota | `jooble.md` |
+| Jooble caps each query at 1,000 results and allows 500 requests per key, lifetime | Queries were partitioned by location, then by title within Riyadh; a repeat Jooble collection must fit the remaining quota | `pipeline/ingestion/collection_methodology.md` |
 
 ---
 
@@ -172,3 +168,5 @@ Corrections to the probe results:
   campaign is to be repeated.
 - **Early probes used small samples.** Section 3.2 replaces their field estimates with measured
   values.
+- **Four of the six terms-of-use exclusions** (Indeed, GulfTalent, NaukriGulf, Glassdoor) were not
+  individually re-checked in the final pass.

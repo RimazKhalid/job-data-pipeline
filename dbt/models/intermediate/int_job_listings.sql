@@ -1,4 +1,4 @@
--- models/intermediate/int_job_listings.sql
+-- dbt/models/intermediate/int_job_listings.sql
 --
 -- Grain: one row per listing (one posting on one source; for Workable, one posting in one city).
 -- Same grain as the six staging models combined. Input to int_jobs_matched.
@@ -13,12 +13,13 @@
 --                    remote_status, plain-text description, matching keys.
 --   3. city_hits     seed_city_mapping lookup: city field first, then location text.
 --   4. category_hits seed_job_categories lookup with a deterministic tie-break.
---   5. final select  company_norm, location_level, job_category, aggregator is_active.
-
-    -- PROVISIONAL (26 Sep 2026): the 26 Sep aggregator runs repeated only the general query
-    -- (L0_general_sa), not the 9-11 Sep campaign, so most earlier aggregator listings are marked
-    -- inactive here because that query did not return them, not because they closed. To be
-    -- revisited once the full campaign has been repeated.
+--   5. final select  company_norm, location_level, job_category, is_active.
+--
+-- is_active: known for ATS listings only (a board file lists every open job, so a posting missing
+-- from the latest pull of its own board was taken down). Aggregator listings get null (unknown):
+-- a query returns a ranked slice of the market, not a full list, so a listing that a later run did
+-- not return may still be open. The earlier 7-day rule marked 9,851 of 11,032 aggregator listings
+-- inactive after the 26 Sep re-run repeated only the general query (data_model.md, Section 7.2).
 
 with unioned as (
 
@@ -270,13 +271,9 @@ select
         else coalesce(cat.job_category, 'Other')
     end                                                                              as job_category,
 
-    -- ATS status comes from staging (absent from the latest pull of its own board).
-    -- Aggregators return no complete list, so a listing counts as active when it was seen
-    -- within 7 days of its source's latest collection (Section 7.2).
-    coalesce(
-        s.is_active_staging,
-        datediff('day', s.last_seen_at, max(s.last_seen_at) over (partition by s.source_name)) <= 7
-    )                                                                                as is_active
+    -- ATS: from staging (absent from the latest pull of its own board = taken down).
+    -- Aggregators: null = unknown; staging passes null::boolean for Jooble and JSearch.
+    s.is_active_staging                                                              as is_active
 
 from standardized s
 left join city_hits ch
