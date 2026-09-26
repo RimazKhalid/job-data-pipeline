@@ -5,7 +5,7 @@ Target dimensional model for the curated job-market dataset, designed before the
 
 |                        |                                                                                                                                         |
 |------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| **Version**            | 2.1, 26 September 2026. Numbers are from the 26 September build (`run_id 20260926T171744Z`). Changes in Section 16 |
+| **Version**            | 2.1, 26 September 2026. Numbers are from the 26 September build (`run_id 20260926T200419Z`). Changes in Section 16 |
 | **Pattern**            | Star schema: **one fact table** (`fct_jobs`, an accumulating snapshot) and six dimensions                                               |
 | **Approach**           | ELT — raw data loaded untouched into Snowflake, transformed with dbt                                                                    |
 | **Dimension history**  | Type 1 (overwrite). A job opening’s lifecycle is kept as dates on the fact                                                              |
@@ -75,7 +75,7 @@ The star schema measures this process at the level of the job opening: one posti
 - **Location.** A city when the source names one; otherwise the region, or Saudi Arabia as a whole (Section 6, `dim_location`).
 - **Multi-city postings.** Workable publishes a posting open in several cities as one listing per city, and each city is its own opening. The other sources give one location per listing; when its text names several Saudi cities, the first one is used. This is rare in the samples: one Ashby listing names two cities (`"Riyadh / Jeddah"`) and one more lists them only in `secondaryLocations`, which staging keeps but does not use (2 of 47); one SmartRecruiters listing of 908 says `"Multiple Cities"`; no JSearch, Jooble or Greenhouse row names two Saudi cities.
 - **The grain is tested.** `posting_sk` + `location_sk` must be unique in `fct_jobs`. The test fails if two cities of one Workable posting resolve to the same location, for example two cities missing from `seed_city_mapping` that both fall to country level. The samples held one such posting (As Sulayyil and Al Mubarraz); both cities are now in the seed.
-- **Expected rows.** Fewer openings than the staged listings (13,255 openings from 13,777 listings in the 26 September build): the difference is the cross-source overlap resolved by matching (Section 8). Fewer postings than openings: the difference is the extra cities of multi-city postings.
+- **Expected rows.** Fewer openings than the staged listings (13,163 openings from 13,777 listings in the 26 September build): the difference is the cross-source overlap resolved by matching (Section 8). Fewer postings than openings: the difference is the extra cities of multi-city postings.
 - **Why the opening and not the listing.** Counting listings would count a job published on three sources three times, so “how many jobs were advertised in Riyadh?” would be wrong. The link from each opening back to its listings is kept in `int_jobs_matched` for lineage, and the fact carries the listing counts (Section 7.1), so no second fact table is needed.
 
 ### Fact table type
@@ -114,15 +114,17 @@ One row per job posting, after merging. It holds the long text, so the fact tabl
 | `company_name`          | STRING      | Display name: the standard name from `seed_company_aliases` when listed there, otherwise the name from the highest-priority listing |
 | `company_norm`          | STRING      | Matching key: legal suffixes and labels removed, then mapped through `seed_company_aliases`                                         |
 | `industry`              | STRING      | Most frequent industry across the company’s listings (Workable / SmartRecruiters only)                                              |
-| `is_recruitment_agency` | BOOLEAN     | From `seed_company_aliases`. Agencies advertise on behalf of clients, so Q3 excludes them and Q7 is shown with and without them     |
+| `is_recruitment_agency` | BOOLEAN     | From `seed_company_aliases`. Intermediaries — recruitment agencies and job boards — advertise on behalf of other employers, so Q3 excludes them and Q7 is shown with and without them |
 
 `seed_company_aliases` maps known spellings of a company to one standard name, and flags agencies. It covers:
 
 - the Ashby board slugs (e.g. `lilt-production` → `Lilt`), because Ashby’s API returns no company name: the ten boards collected now, plus `camunda`, collected earlier and no longer pulled;
-- placeholders such as `Private Company` or `Confidential`, mapped to Unknown (`'-1'`);
-- aliases and agencies found among the 60 largest companies by listing count, which cover 58% of listings. `Private Company` alone is 13.6% of listings (Jooble and JSearch).
+- placeholders such as `Private Company`, `Confidential` or text that is not a company name, mapped to Unknown (`'-1'`);
+- every company name found in the 26 September build that was not yet in the seed, reviewed on 26 September: spellings of one company merged (e.g. `Aramco`, `Saudi Aramco` and `Saudi Aramco (ASC)` → `Saudi Aramco`; `Aramco Overseas Company` stays separate), recruitment agencies and job boards flagged, bilingual names reduced to their English part and emoji removed from the display name.
 
-It holds **no Arabic spelling yet**: all 36 aliases are in Latin script, while 12 of the 200 sampled JSearch employer names contain Arabic. Arabic aliases for the largest companies are to be added (Section 15); until then, an Arabic company name matches only the same Arabic name.
+It now holds 742 aliases: 47 placeholders and 695 aliases of 545 companies, 175 of them flagged as agencies or job boards. 85 aliases are in Arabic script, so an Arabic spelling of a listed company resolves to its English name. Every alias is stored exactly as `normalize_company()` outputs it; `analyses/companies_not_in_seed.sql` lists the names still outside the seed and candidate pairs to merge.
+
+A job board that names no employer (e.g. a listing whose company is the board itself) keeps the board's name and is flagged, rather than being shown as unknown. The Unknown member of `dim_company` is displayed as **Employer not disclosed**: almost all of these listings come from Jooble, whose redirect URLs and LinkedIn “confidential” postings do not reveal the employer.
 
 ### `dim_location` — where
 
@@ -234,7 +236,7 @@ An opening with at least one ATS listing takes its status from its ATS listings;
 
 A test in `marts/schema.yml` enforces it: `is_active` is not null exactly when `status_basis = 'employer board'`.
 
-**Why null and not a 7-day rule.** Until 26 September an aggregator listing counted as inactive when it had not been returned within 7 days of its source’s latest run. The 26 September re-run repeated only the general query (`L0_general_sa`), which returns about 1,000 listings, so 9,851 of the 11,032 aggregator listings would have been marked taken down although nothing showed they closed. Repeating the whole campaign would not fix it: it used about 770 Jooble requests, more than one key’s lifetime quota, and even the same query returns a different ranking on another day. In the 26 September build: 2,596 openings active and 141 taken down (employer board); 10,518 without a status (aggregator query).
+**Why null and not a 7-day rule.** Until 26 September an aggregator listing counted as inactive when it had not been returned within 7 days of its source’s latest run. The 26 September re-run repeated only the general query (`L0_general_sa`), which returns about 1,000 listings, so 9,851 of the 11,032 aggregator listings would have been marked taken down although nothing showed they closed. Repeating the whole campaign would not fix it: it used about 770 Jooble requests, more than one key’s lifetime quota, and even the same query returns a different ranking on another day. In the 26 September build: 2,596 openings active and 141 taken down (employer board); 10,426 without a status (aggregator query).
 
 Version 1 used “active if any listing is active”, so a job that was gone from its Workable board stayed active through an aggregator copy, and dropped out of Q9. The status is as of the latest employer-board collection, 25 September.
 
@@ -325,7 +327,7 @@ Example: an opening whose representative listing is from Workable (no remote sig
 
 | **Risk**                                                               | **Effect**                                                                                                                         | **Mitigation**                                                                                                                                     |
 |------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| Company names differ between sources (Arabic / English, abbreviations) | Missed matches: matching only compares listings of the same company, so an unresolved company blocks all of its jobs from matching | `seed_company_aliases`, built from the 60 largest companies, plus Arabic aliases (to add); share of listings resolved through the seed is reported |
+| Company names differ between sources (Arabic / English, abbreviations) | Missed matches: matching only compares listings of the same company, so an unresolved company blocks all of its jobs from matching | `seed_company_aliases` (742 aliases, 85 in Arabic), reviewed against every company name in the build; names still outside it are listed by `analyses/companies_not_in_seed.sql` |
 | Recruitment agencies post on behalf of clients                         | No match with the client’s own listing; agencies would dominate Q3 and Q7                                                          | `is_recruitment_agency`; Q3 excludes agencies, Q7 is shown with and without them                                                                   |
 | Very generic titles (`"Sales Executive"`)                              | Possible false merges                                                                                                              | Exact match within the same company and city only                                                                                                  |
 
@@ -617,11 +619,11 @@ Figures that exist only before the marts — RAW rows, failed pages, out-of-scop
 | **Check**                                                        | **Value**       |
 |------------------------------------------------------------------|-----------------|
 | Staging rows = `int_job_listings` rows = `int_jobs_matched` rows | 13,777          |
-| Distinct `job_sk` = `int_job_openings` rows = `fct_jobs` rows    | 13,255          |
-| One representative listing per opening                           | 13,255          |
+| Distinct `job_sk` = `int_job_openings` rows = `fct_jobs` rows    | 13,163          |
+| One representative listing per opening                           | 13,163          |
 | `SUM(listing_count)` and the six per-source counts               | 13,777          |
 | `SUM(copies_landed)` in the fact = in the listings               | 26,095          |
-| Postings in the fact = `dim_job_posting` rows (without Unknown)  | 12,803          |
+| Postings in the fact = `dim_job_posting` rows (without Unknown)  | 12,711          |
 | Openings with negative `days_open`                               | 0               |
 | Unknown member in each of the six dimensions                     | 1 each          |
 
@@ -659,7 +661,7 @@ Figures that exist only before the marts — RAW rows, failed pages, out-of-scop
 - **The last employer-board collection was on 25 September (UTC).** A job posted after it was never observed, so the week starting 20 September is partial in Q8 and later weeks are not reported.
 - **Very old postings.** ATS postings date back to 2018 (SmartRecruiters) and 2024 (Workable); the median posting was 94–137 days old when first collected. Q9 therefore reports the median.
 - **About 20% of titles are uncategorized** because they are generic (`Specialist`, `Supervisor`). Ties between two categories of equal priority are resolved by keyword length, then name: 48 of the 2,832 sampled titles (1.7%) tie, most between Engineering and Operations (e.g. `Planning Engineer`).
-- **Arabic text.** The category seed has no Arabic keyword, so all 24 Arabic-only titles in the samples fall into `Other`; the company seed has no Arabic alias; and titles are not translated, so an Arabic listing matches only the same Arabic title. About 20 Arabic keywords (e.g. محاسب، مهندس، ممرض، مبيعات) and Arabic aliases for the largest companies are planned.
+- **Arabic text.** The category seed has no Arabic keyword, so all 24 Arabic-only titles in the samples fall into `Other`; the company seed has 85 Arabic aliases, but an Arabic company name not in it matches only the same Arabic name; and titles are not translated, so an Arabic listing matches only the same Arabic title. About 20 Arabic keywords (e.g. محاسب، مهندس، ممرض، مبيعات) are planned.
 - **Multi-city text.** A listing that names several Saudi cities in one text is assigned the first one; the others are not counted separately (2 of 47 Ashby listings in the samples).
 - **Source data errors.** Some SmartRecruiters postings carry a Saudi country code with a city of Warsaw, Paris or New York, and a JSearch posting has `job_city = "Huntersville"` with `job_country = "SA"`; they appear at country level.
 - **Geographic filtering at extraction.** Ashby, Workable and Greenhouse were filtered to Saudi postings before landing, so a posting whose primary location is abroad but lists a Saudi city as a secondary location was not collected.
@@ -674,16 +676,16 @@ Figures that exist only before the marts — RAW rows, failed pages, out-of-scop
 
 ## 15. Build status
 
-As of the 26 September build (`run_id 20260926T171744Z`).
+As of the 26 September build (`run_id 20260926T200419Z`).
 
 | **Object** | **Status** |
 |------------|------------|
 | `stg_*` (6) | ✅ Built on three ATS collections and two aggregator runs; all tests pass |
-| Seeds (5) | ✅ Loaded and tested. `seed_city_mapping` 219 aliases (region names unified, e.g. `Hail`); `seed_company_aliases` 37; `seed_job_categories` 171; `seed_experience_levels` 7; `seed_sources` 6 |
+| Seeds (5) | ✅ Loaded and tested. `seed_city_mapping` 219 aliases (region names unified, e.g. `Hail`); `seed_company_aliases` 742 (reviewed 26 September); `seed_job_categories` 171; `seed_experience_levels` 7; `seed_sources` 6 |
 | Macros | ✅ `normalize_text`, `normalize_title`, `normalize_company`, `strip_html`, `normalize_employment_type` (combined values such as `Full-time and Part-time` added 26 September), `generate_schema_name`, `load_raw`, `export_marts` |
-| `int_job_listings`, `int_jobs_matched`, `int_job_openings` | ✅ Built: 13,777 listings, 13,255 openings |
-| `dim_job_posting`, `dim_company`, `dim_location`, `dim_date`, `dim_source`, `dim_job_attributes` | ✅ Built: 12,804, 1,939, 56, 3,001, 7 and 400 rows (each with its Unknown member) |
-| `fct_jobs` | ✅ Built: 13,255 rows |
+| `int_job_listings`, `int_jobs_matched`, `int_job_openings` | ✅ Built: 13,777 listings, 13,163 openings |
+| `dim_job_posting`, `dim_company`, `dim_location`, `dim_date`, `dim_source`, `dim_job_attributes` | ✅ Built: 12,712, 1,754, 56, 3,001, 7 and 399 rows (each with its Unknown member) |
+| `fct_jobs` | ✅ Built: 13,163 rows |
 | Tests | ✅ 182 data tests; 203 nodes: 202 pass, 1 warning (one listing whose title normalizes to empty). Added after the external review: `assert_ats_latest_pull_not_collapsed`, and `is_active` known exactly when `status_basis = 'employer board'` |
 | Pipeline runner | ✅ `pipeline/run_pipeline.py`: extract, upload, load, freshness, build, export; every run logged in `run_log.csv` |
 | ADLS `curated/` | ✅ Seven Parquet files per export, under `export_date=` partitions |
@@ -702,6 +704,7 @@ As of the 26 September build (`run_id 20260926T171744Z`).
 - Section 12.1 re-recorded; Section 12.3 (layer reconciliation) and Section 17 (results) added.
 - Sections 11 and 15: build status updated; export of the marts to ADLS `curated/` added as step 9.
 - Employment type: combined values (`Full-time and Part-time`) kept as their own value.
+- Company seed expanded from 37 to 742 aliases (Section 6): merges, agencies and job boards, placeholders, Arabic spellings. Openings fell from 13,255 to 13,163, because listings of one company under different names now match; `dim_company` fell from 1,939 to 1,754 rows. The Unknown company is displayed as “Employer not disclosed”.
 
 ### Version 2 compared with version 1
 
@@ -732,12 +735,20 @@ From `analyses/business_questions.sql`. None of Q1–Q9 uses aggregator status (
 
 | **Question** | **Result** |
 |--------------|------------|
-| Q1 | 12,803 unique job postings, 13,255 job openings |
-| Q2 | Riyadh 6,627 · Jeddah 1,412 · Dammam 1,042 · Al Khobar 735 · Jubail 717 · Makkah 452 · Dhahran 366 · Madinah 354 · Umluj 229 · Yanbu 168 |
-| Q3 (agencies excluded) | Qiddiya Investment Company 390 · AccorHotel 332 · JASARA PMC 217 · AtkinsRéalis 195 · Marriott 159 · Aramco Overseas Company 155 · Lucid Motors 106 · BEC Arabia 97 · TAWANTECH 96 · Apex Operations 88 |
-| Q4 | Other 2,426 · Construction & Trades 1,816 · Engineering 1,212 · Management 1,147 · Sales & Business Development 1,082 (19 categories) |
-| Q5 | 92.1% full-time (3,461 of 3,758 postings with a known type) |
-| Q6 | 2.3% fully remote (94 of 4,122 postings with a known status) |
+| Q1 | 12,711 unique job postings, 13,163 job openings |
+| Q2 | Riyadh 6,571 · Jeddah 1,400 · Dammam 1,042 · Al Khobar 726 · Jubail 717 · Makkah 446 · Dhahran 366 · Madinah 349 · Umluj 226 · Yanbu 168 |
+| Q3 (agencies and job boards excluded) | Qiddiya Investment Company 392 · AccorHotel 344 · JASARA PMC 217 · AtkinsRéalis 195 · Marriott 169 · Aramco Overseas Company 155 · WSP 107 · Lucid Motors 106 · BEC Arabia 97 · Tawantech 96 |
+| Q4 | Other 2,405 · Construction & Trades 1,810 · Engineering 1,211 · Management 1,127 · Sales & Business Development 1,079 (19 categories, plus 1 Unknown) |
+| Q5 | 92.1% full-time (3,442 of 3,739 postings with a known type) |
+| Q6 | 2.3% fully remote (94 of 4,096 postings with a known status) |
 | Q7 | All companies: Mid-Senior leads in Riyadh (497 of 899) and the Eastern Province (158 of 281); Entry in Makkah (102 of 253), Tabuk (102 of 181) and Madinah (31 of 51). Without agencies: Mid-Senior in Riyadh (205 of 393) and Makkah (36 of 124), Entry in Tabuk (67 of 139), Associate in the Eastern Province (12 of 25). Regions with fewer than 20 postings of known level are left out |
 | Q8 (ATS only) | Weeks from 30 Aug: 71 (partial) · 120 · 118 · 100 (partial), posting dates 1–25 September |
 | Q9 (ATS only) | 141 openings taken down; median 37 days from posting to last seen (mean 55.5, for reference) |
+
+Quality measures on the same build (`analyses/model_checks.sql`, all 16 reconciliation checks pass):
+
+| **Measure** | **Result** |
+|-------------|------------|
+| Openings found on more than one source | 518 of 13,163 (3.9%): 503 on two sources, 15 on three |
+| Status (Section 7.2) | Employer board: 2,596 active, 141 taken down · Aggregator query: 10,426 without a status (Jooble 8,407, JSearch 2,019) |
+| Share of openings with an Unknown value | Company 17.3% · city 3.4% · employment type 69.2% · remote status 65.4% · experience level 86.4% · posting date 65.2% · category `Other` 18.7% |
