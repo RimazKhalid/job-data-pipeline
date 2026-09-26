@@ -48,4 +48,4 @@ left join industries i
 
 union all
 
-select '-1', 'Unknown', null, null, false
+select '-1', 'Employer not disclosed', null, null, false
