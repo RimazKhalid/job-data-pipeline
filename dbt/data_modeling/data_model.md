@@ -689,7 +689,7 @@ As of the 26 September build (`run_id 20260926T200419Z`).
 | Tests | ✅ 182 data tests; 203 nodes: 202 pass, 1 warning (one listing whose title normalizes to empty). Added after the external review: `assert_ats_latest_pull_not_collapsed`, and `is_active` known exactly when `status_basis = 'employer board'` |
 | Pipeline runner | ✅ `pipeline/run_pipeline.py`: extract, upload, load, freshness, build, export; every run logged in `run_log.csv` |
 | ADLS `curated/` | ✅ Seven Parquet files per export, under `export_date=` partitions |
-| `final_datasets/` | README done; the seven CSVs being added |
+| `final_datasets/` | ✅ README and the seven MARTS tables as CSV (run `20260926T200419Z`) |
 | Roles | ✅ `snowflake/roles_and_grants.sql`: `JOB_PIPELINE_DEV` for dbt, `JOB_PIPELINE_REPORTER` read-only on MARTS for Power BI (checked: STAGING not visible) |
 | Aggregator status | ✅ Null for aggregator-only openings (Section 7.2). Repeating the campaign would add listings, not status |
 
