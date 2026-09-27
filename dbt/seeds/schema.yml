@@ -1,3 +1,4 @@
+# dbt/seeds/schema.yml
 version: 2
 
 seeds:
@@ -195,3 +196,21 @@ seeds:
             combination_of_columns:
               - listing_a
               - listing_b
+
+  - name: seed_role_families
+    description: >
+      Parent of every job category, so dim_role is a two-level hierarchy (role_family ->
+      job_category; data model v3, section 6). One row per category of seed_job_categories plus
+      Other; tests/assert_every_category_has_family.sql fails when a category is missing here.
+    config:
+      column_types:
+        job_category: varchar
+        role_family: varchar
+    columns:
+      - name: job_category
+        data_tests:
+          - unique
+          - not_null
+      - name: role_family
+        data_tests:
+          - not_null

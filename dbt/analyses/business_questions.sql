@@ -1,132 +1,164 @@
 -- dbt/analyses/business_questions.sql
 --
--- Answers to Q1–Q9 (data_model.md, Sections 2 and 9), read from the MARTS schema only.
--- Run each query on its own in a Snowflake worksheet (select it, then Ctrl+Enter).
+-- Answers to Q1–Q9 of data model v3 (section 2), read from the MARTS schema only.
+-- Run each query on its own in a Snowflake worksheet (cursor inside it, Ctrl+Enter).
 --
--- "Advertised during September 2026" = first seen on or before 30 Sep and last seen on or
--- after 1 Sep. Postings = COUNT(DISTINCT posting_sk); openings (posting x city) = SUM(job_count).
+-- Every answer is per week (Sunday to Saturday, Asia/Riyadh).
+--   Stock (Q1–Q3)   jobs open during the week: SUM(job_count) in fct_job_weeks
+--   Flow  (Q4–Q7, Q9) new openings in the week: fct_job_weeks where is_new_in_week
+--   Lifecycle (Q8)  jobs that disappeared in the week: fct_jobs by disappeared date
+-- is_complete_week is returned with every weekly answer. Report a week only when it is true:
+-- in any other week at least one source was not fully pulled, and a missing source looks like a
+-- drop in the market (data model v3, section 2).
 
 use schema job_pipeline_db.marts;
 
--- Q1. How many unique job postings were being advertised in Saudi Arabia during September 2026?
-select count(distinct f.posting_sk) as job_postings,
-       sum(f.job_count)             as job_openings
+
+-- Q1. How many unique job openings were open in Saudi Arabia during each week?
+select d.week_start_date,
+       w.is_complete_week,
+       sum(w.job_count)                                   as open_jobs
+from fct_job_weeks w
+join dim_date d on w.week_date_sk = d.date_sk
+group by 1, 2
+order by 1;
+
+
+-- Q2. Which regions had the most open job openings during each week? (city = drill-down)
+select d.week_start_date,
+       w.is_complete_week,
+       l.region,
+       sum(w.job_count)                                   as open_jobs,
+       rank() over (partition by d.week_start_date order by sum(w.job_count) desc) as region_rank
+from fct_job_weeks w
+join dim_date d     on w.week_date_sk = d.date_sk
+join dim_location l on w.location_sk = l.location_sk
+where l.location_level in ('city', 'region')            -- country-level jobs have no region
+group by 1, 2, 3
+order by 1, region_rank;
+
+
+-- Q3. Which employers had the most open job openings during each week, excluding placeholder
+--     companies and recruitment intermediaries? (top 10 per week)
+select d.week_start_date,
+       w.is_complete_week,
+       c.company_name,
+       sum(w.job_count)                                   as open_jobs
+from fct_job_weeks w
+join dim_date d    on w.week_date_sk = d.date_sk
+join dim_company c on w.company_sk = c.company_sk
+where c.company_sk <> '-1'
+  and not c.is_recruitment_intermediary
+group by 1, 2, 3
+qualify row_number() over (partition by d.week_start_date order by open_jobs desc, c.company_name) <= 10
+order by 1, open_jobs desc;
+
+
+-- Q4. Which job categories had the most new openings in each week? (with the share left in Other)
+select d.week_start_date,
+       w.is_complete_week,
+       r.role_family,
+       r.job_category,
+       sum(w.job_count)                                   as new_openings,
+       round(100 * ratio_to_report(sum(w.job_count)) over (partition by d.week_start_date), 1)
+                                                          as pct_of_week
+from fct_job_weeks w
+join dim_date d on w.week_date_sk = d.date_sk
+join dim_role r on w.role_sk = r.role_sk
+where w.is_new_in_week
+group by 1, 2, 3, 4
+order by 1, new_openings desc;
+
+
+-- Q5. What share of new openings in each week falls into each employment type?
+select d.week_start_date,
+       w.is_complete_week,
+       a.employment_type,
+       sum(w.job_count)                                   as new_openings,
+       round(100 * ratio_to_report(sum(w.job_count)) over (partition by d.week_start_date), 1)
+                                                          as pct_of_all,
+       iff(a.employment_type = 'Unknown', null,
+           round(100 * sum(w.job_count) / sum(iff(a.employment_type = 'Unknown', 0, sum(w.job_count)))
+                 over (partition by d.week_start_date), 1)) as pct_of_known
+from fct_job_weeks w
+join dim_date d           on w.week_date_sk = d.date_sk
+join dim_job_attributes a on w.job_attributes_sk = a.job_attributes_sk
+where w.is_new_in_week
+group by 1, 2, 3
+order by 1, new_openings desc;
+
+
+-- Q6. Which experience levels are most requested in new openings, per region and per week?
+--     (Unknown excluded; seniority_basis shows how much comes from titles)
+select d.week_start_date,
+       w.is_complete_week,
+       l.region,
+       a.seniority,
+       sum(w.job_count)                                   as new_openings,
+       sum(iff(a.seniority_basis = 'title', w.job_count, 0)) as from_title
+from fct_job_weeks w
+join dim_date d           on w.week_date_sk = d.date_sk
+join dim_location l       on w.location_sk = l.location_sk
+join dim_job_attributes a on w.job_attributes_sk = a.job_attributes_sk
+where w.is_new_in_week
+  and a.seniority <> 'Unknown'
+  and l.location_level in ('city', 'region')
+group by 1, 2, 3, 4
+qualify rank() over (partition by d.week_start_date, l.region order by new_openings desc) = 1
+order by 1, new_openings desc;
+
+
+-- Q7. How is the number of new openings changing week by week?
+select d.week_start_date,
+       w.is_complete_week,
+       sum(w.job_count)                                   as new_openings,
+       sum(w.job_count) - lag(sum(w.job_count)) over (order by d.week_start_date) as change_vs_previous_week
+from fct_job_weeks w
+join dim_date d on w.week_date_sk = d.date_sk
+where w.is_new_in_week
+group by 1, 2
+order by 1;
+
+
+-- Q8. For job openings that disappeared in each week, what was the median number of days they
+--     were listed? (employer boards only: an aggregator-only job has no disappeared date)
+select d.week_start_date                                  as disappeared_week,
+       count(*)                                           as jobs_disappeared,
+       median(f.days_listed)                              as median_days_listed,
+       count_if(f.days_listed_basis = 'first_seen')       as measured_from_first_seen
 from fct_jobs f
-where f.first_seen_date_sk <= 20260930
-  and f.last_seen_date_sk  >= 20260901;
+join dim_date d on f.disappeared_date_sk = d.date_sk
+where f.lifecycle_status = 'disappeared'
+group by 1
+order by 1;
 
 
--- Q2. Which 10 Saudi cities had the most job openings being advertised during September 2026?
-select l.city, l.region, sum(f.job_count) as job_openings
-from fct_jobs f
-join dim_location l on f.location_sk = l.location_sk
-where f.first_seen_date_sk <= 20260930
-  and f.last_seen_date_sk  >= 20260901
-  and l.location_level = 'city'
-group by l.city, l.region
-order by job_openings desc
-limit 10;
-
-
--- Q3. Which 10 employers, excluding recruitment agencies, were advertising the most job postings?
-select c.company_name, count(distinct f.posting_sk) as job_postings
-from fct_jobs f
-join dim_company c on f.company_sk = c.company_sk
-where f.first_seen_date_sk <= 20260930
-  and f.last_seen_date_sk  >= 20260901
-  and not c.is_recruitment_agency
-  and c.company_sk <> '-1'
-group by c.company_sk, c.company_name
-order by job_postings desc
-limit 10;
-
-
--- Q4. Which job categories had the most job postings?
-select a.job_category, count(distinct f.posting_sk) as job_postings
-from fct_jobs f
-join dim_job_attributes a on f.job_attributes_sk = a.job_attributes_sk
-where f.first_seen_date_sk <= 20260930
-  and f.last_seen_date_sk  >= 20260901
-group by a.job_category
-order by job_postings desc;
-
-
--- Q5. What percentage of the job postings were full-time? (Unknown excluded from the base)
-select
-    count(distinct iff(a.employment_type = 'Full-time', f.posting_sk, null))  as full_time_postings,
-    count(distinct iff(a.employment_type <> 'Unknown', f.posting_sk, null))   as postings_with_known_type,
-    round(100 * full_time_postings / nullif(postings_with_known_type, 0), 1)  as pct_full_time
-from fct_jobs f
-join dim_job_attributes a on f.job_attributes_sk = a.job_attributes_sk
-where f.first_seen_date_sk <= 20260930
-  and f.last_seen_date_sk  >= 20260901;
-
-
--- Q6. What percentage of the job postings were fully remote? (Hybrid counts as not remote)
-select
-    count(distinct iff(a.remote_status = 'Remote', f.posting_sk, null))       as remote_postings,
-    count(distinct iff(a.remote_status <> 'Unknown', f.posting_sk, null))     as postings_with_known_status,
-    round(100 * remote_postings / nullif(postings_with_known_status, 0), 1)   as pct_remote
-from fct_jobs f
-join dim_job_attributes a on f.job_attributes_sk = a.job_attributes_sk
-where f.first_seen_date_sk <= 20260930
-  and f.last_seen_date_sk  >= 20260901;
-
-
--- Q7. Which experience level was requested most in each region, with and without agencies?
--- Regions with fewer than 20 postings of known level are left out: with 1 to 15 postings the
--- "most requested" level is a tie or a single posting, not a finding.
-with base as (
-    select l.region, a.experience_level, c.is_recruitment_agency, f.posting_sk
-    from fct_jobs f
-    join dim_location l       on f.location_sk = l.location_sk
-    join dim_job_attributes a on f.job_attributes_sk = a.job_attributes_sk
-    join dim_company c        on f.company_sk = c.company_sk
-    where f.first_seen_date_sk <= 20260930
-      and f.last_seen_date_sk  >= 20260901
-      and l.region <> 'Unknown'
-      and a.experience_level <> 'Unknown'
+-- Q9. Which skills are mentioned by the largest share of new openings in each week?
+--     Denominator: new openings with a full description (Jooble snippets excluded). Top 10 per week.
+with new_full as (
+    select w.job_sk, d.week_start_date, w.is_complete_week
+    from fct_job_weeks w
+    join dim_date d         on w.week_date_sk = d.date_sk
+    join dim_job_posting p  on w.job_sk = p.job_sk
+    where w.is_new_in_week
+      and p.description_basis = 'full'
 ),
-counted as (
-    select 'All companies' as variant, region, experience_level, count(distinct posting_sk) as job_postings
-    from base group by region, experience_level
-    union all
-    select 'Excluding agencies', region, experience_level, count(distinct posting_sk)
-    from base where not is_recruitment_agency group by region, experience_level
+denominator as (
+    select week_start_date, count(*) as jobs_with_full_description
+    from new_full
+    group by week_start_date
 )
-select variant, region, experience_level, job_postings,
-       sum(job_postings) over (partition by variant, region) as postings_with_known_level
-from counted
-qualify rank() over (partition by variant, region order by job_postings desc) = 1
-    and sum(job_postings) over (partition by variant, region) >= 20
-order by variant, postings_with_known_level desc;
-
-
--- Q8. How many new job postings were posted in each week of September 2026? (ATS sources only)
--- Weeks start on Sunday. The week of 30 Aug covers 1–5 Sep only; the week of 20 Sep ends at the
--- last employer-board collection (Fri 25 Sep, UTC). Both are partial.
-select
-    d.week_start_date,
-    count(distinct f.posting_sk)                                     as new_postings,
-    iff(d.week_start_date in ('2026-08-30', '2026-09-20'), 'partial', 'full') as week_coverage
-from fct_jobs f
-join dim_date d   on f.posting_date_sk = d.date_sk
-join dim_source s on f.primary_source_sk = s.source_sk
-where f.posting_date_sk between 20260901 and 20260925
-  and s.source_type = 'ATS'
-group by d.week_start_date
-order by d.week_start_date;
-
-
--- Q9. For job openings taken down during September 2026, what was the median number of days
--- between their posting date and their removal? (ATS evidence only)
-select
-    count(*)                    as openings_taken_down,
-    median(f.days_open)         as median_days_open,
-    round(avg(f.days_open), 1)  as avg_days_open_for_reference
-from fct_jobs f
-join dim_source s on f.primary_source_sk = s.source_sk
-where not f.is_active
-  and s.source_type = 'ATS'
-  and f.last_seen_date_sk between 20260901 and 20260930
-  and f.posting_date_sk <> -1;
+select n.week_start_date,
+       n.is_complete_week,
+       s.skill_name,
+       s.skill_group,
+       count(distinct n.job_sk)                           as jobs_mentioning,
+       dn.jobs_with_full_description,
+       round(100 * count(distinct n.job_sk) / dn.jobs_with_full_description, 1) as pct_of_jobs
+from new_full n
+join bridge_job_skill b on n.job_sk = b.job_sk
+join dim_skill s        on b.skill_sk = s.skill_sk
+join denominator dn     on n.week_start_date = dn.week_start_date
+group by 1, 2, 3, 4, 6
+qualify row_number() over (partition by n.week_start_date order by jobs_mentioning desc, s.skill_name) <= 10
+order by 1, jobs_mentioning desc;
