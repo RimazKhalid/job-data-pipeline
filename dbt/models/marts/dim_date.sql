@@ -1,24 +1,15 @@
 -- dbt/models/marts/dim_date.sql
 --
--- When. One row per day, Asia/Riyadh calendar, plus the Unknown member (-1). Role-playing: the
--- facts join it as posted, first seen, last seen, open until, opening, disappeared and week.
--- The range runs from the earliest to the latest date of any role, so no relationships test can
--- fail on an old posting date (they reach back to 2018) or on the first week of a job.
--- week_start_date is the Sunday that starts the Saudi working week (macro week_start).
+-- One row per day from the earliest date used by any opening (usually an old posting date) to
+-- the latest collection date, plus the Unknown member (-1). Role-playing dimension: the fact
+-- joins it three times (posted, first seen, last seen).
+-- week_start_date is the Sunday that starts the week, matching the Saudi working week.
 
-with role_dates as (
-    select posting_date as d from {{ ref('int_job_openings') }}
-    union all select first_seen_date  from {{ ref('int_job_openings') }}
-    union all select last_seen_date   from {{ ref('int_job_openings') }}
-    union all select open_until_date  from {{ ref('int_job_openings') }}
-    union all select opening_date     from {{ ref('int_job_openings') }}
-    union all select disappeared_date from {{ ref('int_job_openings') }}
-    union all select week_start_date  from {{ ref('int_job_weeks') }}
-),
-
-bounds as (
-    select min(d) as start_date, max(d) as end_date
-    from role_dates
+with bounds as (
+    select
+        least(coalesce(min(posting_date), min(first_seen_at::date)), min(first_seen_at::date)) as start_date,
+        max(last_seen_at::date)                            as end_date
+    from {{ ref('int_job_openings') }}
 ),
 
 days as (
@@ -29,14 +20,14 @@ days as (
 )
 
 select
-    {{ date_key('full_date') }}            as date_sk,
+    to_number(to_char(full_date, 'YYYYMMDD'))              as date_sk,
     full_date,
-    dayname(full_date)                     as day_name,
-    {{ week_start('full_date') }}          as week_start_date,
-    month(full_date)                       as month,
-    quarter(full_date)                     as quarter,
-    year(full_date)                        as year,
-    dayofweekiso(full_date) in (5, 6)      as is_weekend   -- Friday and Saturday
+    dayname(full_date)                                     as day_of_week,
+    dateadd('day', -mod(dayofweekiso(full_date), 7), full_date) as week_start_date,
+    month(full_date)                                       as month,
+    quarter(full_date)                                     as quarter,
+    year(full_date)                                        as year,
+    dayofweekiso(full_date) in (5, 6)                      as is_weekend   -- Friday and Saturday
 from days
 
 union all

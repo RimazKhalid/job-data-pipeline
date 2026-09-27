@@ -1,63 +1,51 @@
 -- dbt/models/marts/fct_jobs.sql
 --
--- Grain: one job = one job advertisement in one Saudi location, after cross-source matching,
--- however many sources published it (data model v3, sections 4 and 7.1).
--- Accumulating snapshot: one row per job for its whole life, one date column per milestone.
+-- Grain: one job opening = one job posting in one Saudi location, after the listings of the
+-- same posting on several sources have been merged (data_model.md, Section 4).
+-- Accumulating snapshot: the opening's dates (posted, first seen, last seen) are columns.
 --
--- Date roles (dim_date; -1 when the milestone has not happened):
---   posting_date_sk       earliest parsed posting date (employer boards first)
---   first_seen_date_sk    first day any listing of the job was collected
---   last_seen_date_sk     last day any listing of the job was collected
---   open_until_date_sk    last day the job counts as open (int_job_openings)
---   opening_date_sk       first seen date of a job that was not in a baseline pull: a new opening
---   disappeared_date_sk   first successful pull of its board that no longer returned the job
--- Lifecycle:
---   lifecycle_status      open, disappeared (employer-board evidence), unknown (aggregators only)
---   is_baseline           in the first pull of its board or source: existed before we looked
---   is_censored           not disappeared, so days_listed is not complete
 -- Measures:
---   job_count             1 per row (additive)
---   days_listed           posting date (else first seen) to disappeared date; disappeared jobs
---                         only; summarise with a median, never a sum
---   salary_*              as published (min / max, currency, period) and in SAR per month
---                         (month, week and year only); non-additive
--- Source detail (which sources, how many listings) is in bridge_job_listing, not here.
+--   job_count                 1 per row: one job opening (additive)
+--   listing_count (+ 6)       listings merged into the opening, in total and per source (additive)
+--   copies_landed             landed copies of those listings in RAW (additive)
+--   source_count              distinct sources among the listings (non-additive)
+--   days_open                 posting date to last seen; summarized with a median (non-additive)
+-- Job postings are counted as COUNT(DISTINCT posting_sk).
+-- is_active is as of the last collection of the employer's board (status_basis = 'employer board').
+-- It is null for openings found on aggregators only (status_basis = 'aggregator query'): a query
+-- result is not a full list, so absence from a later run is not evidence of closure.
 
 select
     o.job_sk,
-
+    o.posting_sk,
     case when o.company_norm is null then '-1'
          else {{ dbt_utils.generate_surrogate_key(['o.company_norm']) }} end              as company_sk,
-    {{ dbt_utils.generate_surrogate_key(['o.location_level',
-                                         "coalesce(o.region_std, 'Unspecified')",
-                                         "coalesce(o.city_std, 'Unspecified')"]) }}         as location_sk,
-    case when o.job_category = 'Unknown' then '-1'
-         else {{ dbt_utils.generate_surrogate_key(['o.job_category']) }} end              as role_sk,
-    case when o.employment_type = 'Unknown' and o.workplace_type = 'Unknown'
-          and o.experience_level = 'Unknown' and o.experience_level_basis = 'unknown' then '-1'
-         else {{ dbt_utils.generate_surrogate_key(['o.employment_type', 'o.workplace_type',
-                                                   'o.experience_level', 'o.experience_level_basis']) }}
+    {{ dbt_utils.generate_surrogate_key(["coalesce(o.city_std, 'Unknown')",
+                                         "coalesce(o.region_std, 'Unknown')",
+                                         'o.location_level']) }}                          as location_sk,
+    case when o.job_category = 'Unknown' and o.employment_type = 'Unknown'
+          and o.workplace_type = 'Unknown' and o.remote_status = 'Unknown'
+          and o.experience_level = 'Unknown' then '-1'
+         else {{ dbt_utils.generate_surrogate_key(['o.job_category', 'o.employment_type', 'o.workplace_type',
+                                                   'o.remote_status', 'o.experience_level']) }}
     end                                                                                    as job_attributes_sk,
+    {{ dbt_utils.generate_surrogate_key(['o.primary_source_name']) }}                      as primary_source_sk,
 
-    {{ date_key('o.posting_date') }}                                                       as posting_date_sk,
-    {{ date_key('o.first_seen_date') }}                                                    as first_seen_date_sk,
-    {{ date_key('o.last_seen_date') }}                                                     as last_seen_date_sk,
-    {{ date_key('o.open_until_date') }}                                                    as open_until_date_sk,
-    {{ date_key('o.opening_date') }}                                                       as opening_date_sk,
-    {{ date_key('o.disappeared_date') }}                                                   as disappeared_date_sk,
-
-    o.lifecycle_status,
-    o.is_baseline,
-    o.is_censored,
+    coalesce(to_number(to_char(o.posting_date, 'YYYYMMDD')), -1)                           as posting_date_sk,
+    coalesce(to_number(to_char(o.first_seen_at::date, 'YYYYMMDD')), -1)                    as first_seen_date_sk,
+    coalesce(to_number(to_char(o.last_seen_at::date, 'YYYYMMDD')), -1)                     as last_seen_date_sk,
 
     1                                                                                      as job_count,
-    o.days_listed,
-    o.days_listed_basis,
-
-    o.salary_currency,
-    o.salary_period,
-    o.salary_min_amount,
-    o.salary_max_amount,
-    o.salary_min_sar_month,
-    o.salary_max_sar_month
+    o.listing_count,
+    o.listing_count_workable,
+    o.listing_count_smartrecruiters,
+    o.listing_count_ashby,
+    o.listing_count_greenhouse,
+    o.listing_count_jsearch,
+    o.listing_count_jooble,
+    o.copies_landed,
+    o.source_count,
+    o.days_open,
+    o.is_active,
+    o.status_basis
 from {{ ref('int_job_openings') }} o

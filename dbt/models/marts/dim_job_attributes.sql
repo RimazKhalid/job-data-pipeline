@@ -1,35 +1,34 @@
 -- dbt/models/marts/dim_job_attributes.sql
 --
--- What kind of job. Junk dimension: four short, low-cardinality attributes in one table, one row
--- per observed combination (data model v3, section 6).
---   seniority         Internship, Entry, Associate, Mid-Senior, Director, Executive, Unknown
---                     (experience_level in the intermediate layer)
---   seniority_basis   source (the source's own field), title (seed_seniority_keywords), unknown
--- The combination in which all four are unknown is the Unknown member ('-1'), so there is one
--- Unknown row, not two.
+-- Junk dimension: five short, low-cardinality attributes of an opening, one row per observed
+-- combination. The combination in which all five are Unknown is the Unknown member ('-1').
+-- job_category moved here from version 1's dim_role (a one-column dimension).
 
 with combinations as (
     select distinct
+        job_category,
         employment_type,
         workplace_type,
-        experience_level          as seniority,
-        experience_level_basis    as seniority_basis
+        remote_status,
+        experience_level
     from {{ ref('int_job_openings') }}
-    where not (    employment_type        = 'Unknown'
-               and workplace_type         = 'Unknown'
-               and experience_level       = 'Unknown'
-               and experience_level_basis = 'unknown')
+    where not (    job_category     = 'Unknown'
+               and employment_type  = 'Unknown'
+               and workplace_type   = 'Unknown'
+               and remote_status    = 'Unknown'
+               and experience_level = 'Unknown')
 )
 
 select
-    {{ dbt_utils.generate_surrogate_key(['employment_type', 'workplace_type',
-                                         'seniority', 'seniority_basis']) }}   as job_attributes_sk,
+    {{ dbt_utils.generate_surrogate_key(['job_category', 'employment_type', 'workplace_type',
+                                         'remote_status', 'experience_level']) }} as job_attributes_sk,
+    job_category,
     employment_type,
     workplace_type,
-    seniority,
-    seniority_basis
+    remote_status,
+    experience_level
 from combinations
 
 union all
 
-select '-1', 'Unknown', 'Unknown', 'Unknown', 'unknown'
+select '-1', 'Unknown', 'Unknown', 'Unknown', 'Unknown', 'Unknown'

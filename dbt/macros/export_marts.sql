@@ -1,6 +1,6 @@
 {# dbt/macros/export_marts.sql #}
 {#
-    Unloads the fourteen MARTS tables (2 facts, 2 bridges, 8 dimensions, 2 data quality marts) to ADLS, into the "curated" container, as Parquet:
+    Unloads the seven MARTS tables to ADLS, into the "curated" container, as Parquet:
 
         curated/<table>/export_date=YYYY-MM-DD/<table>_<run_id>.parquet
 
@@ -19,11 +19,8 @@
 #}
 
 {% macro export_marts(run_id=none) %}
-    {% set tables = ['fct_jobs', 'fct_job_weeks',
-                     'bridge_job_skill', 'bridge_job_listing',
-                     'dim_job_posting', 'dim_company', 'dim_location', 'dim_role',
-                     'dim_job_attributes', 'dim_skill', 'dim_source', 'dim_date',
-                     'mart_dq_source', 'mart_dq_matching'] %}
+    {% set tables = ['fct_jobs', 'dim_job_posting', 'dim_company', 'dim_location',
+                     'dim_job_attributes', 'dim_date', 'dim_source'] %}
     {% set stage = var('curated_stage', 'job_pipeline_db.marts.curated_stage') %}
     {% set export_date = run_started_at.strftime('%Y-%m-%d') %}
     {% set tag = run_id if run_id else run_started_at.strftime('%Y%m%dT%H%M%SZ') %}
