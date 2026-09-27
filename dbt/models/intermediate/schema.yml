@@ -353,7 +353,7 @@ models:
         data_tests:
           - not_null
       - name: opening_date
-        description: "First seen date for jobs not seen in any baseline pull; null for baseline jobs."
+        description: "First seen date for jobs with an employer-board listing that were not seen in any baseline pull. Null for baseline jobs and for aggregator-only jobs, whose first sighting in a ranked query result is not evidence of a new opening."
       - name: days_listed
         description: "Disappeared jobs only: days from the posting date (else first seen) to the disappeared date. Summarised by median."
         data_tests:

@@ -26,8 +26,12 @@
 --                      latest evidence plus var('recent_window_days'), never after the latest
 --                      successful pull. A job is open during a period when
 --                      first_seen_date <= period end and open_until_date >= period start.
---   opening_date       first_seen_date, only for jobs not seen in any baseline pull: those are
---                      new openings; a baseline job existed before the pipeline looked.
+--   opening_date       first_seen_date, only for jobs with an employer-board listing that were
+--                      not seen in any baseline pull: those are new openings. A baseline job
+--                      existed before the pipeline looked. A job found on aggregators only has no
+--                      opening date: a query result is a ranked slice, so a job missing from an
+--                      earlier campaign may simply not have been returned (the same reason its
+--                      disappearance proves nothing).
 --
 -- is_active and status_basis keep the rule of data model v2.1 for the marts built on it:
 -- employer-board evidence only, null for aggregator-only jobs.
@@ -190,7 +194,7 @@ select
     a.first_seen_date,
     a.last_seen_date,
     a.is_baseline,
-    iff(a.is_baseline, null, a.first_seen_date)                                    as opening_date,
+    iff(a.is_baseline or a.ats_listings = 0, null, a.first_seen_date)              as opening_date,
     a.lifecycle_status,
     iff(a.lifecycle_status = 'disappeared', a.last_disappeared_date, null)         as disappeared_date,
     case

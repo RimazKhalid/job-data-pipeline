@@ -32,7 +32,11 @@ union all
 select 'jobs by lifecycle: ' || lifecycle_status, count(*)::varchar, 'unknown = aggregator-only'
 from {{ ref('int_job_openings') }} group by lifecycle_status
 union all
-select 'baseline jobs / new jobs', count_if(is_baseline)::varchar || ' / ' || count_if(not is_baseline)::varchar, 'new only after a second pull'
+select 'baseline jobs / not in baseline', count_if(is_baseline)::varchar || ' / ' || count_if(not is_baseline)::varchar, 'not in baseline only after a second pull'
+from {{ ref('int_job_openings') }}
+union all
+select 'new openings (employer-board jobs with an opening date)', count(opening_date)::varchar,
+       'aggregator-only jobs never counted'
 from {{ ref('int_job_openings') }}
 union all
 select 'ATS listings staging-inactive but not disappeared', count_if(source_type = 'ATS' and is_active = false and not is_disappeared)::varchar,
