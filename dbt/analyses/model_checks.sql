@@ -6,7 +6,7 @@
 --
 --   1. Reconciliation: row counts must line up layer to layer. Every row should say OK.
 --   2. Per source: listings, active share, collection window.
---   3. Status: active openings by status_basis and primary source.
+--   3. Lifecycle: jobs by lifecycle status and primary source; new openings by week.
 --   4. Matching: openings by number of sources, and the largest merged openings.
 --   5. Coverage: share of Unknown per attribute, and the location levels.
 
@@ -28,7 +28,7 @@ f  as (select count(*) as n, sum(listing_count) as listings,
               sum(listing_count_workable + listing_count_smartrecruiters + listing_count_ashby
                 + listing_count_greenhouse + listing_count_jsearch + listing_count_jooble) as per_source,
               sum(copies_landed) as copies, count(distinct posting_sk) as postings,
-              count_if(days_open < 0) as negative_days
+              count_if(days_listed < 0) as negative_days
        from job_pipeline_db.marts.fct_jobs),
 p  as (select count_if(posting_sk <> '-1') as n from job_pipeline_db.marts.dim_job_posting),
 
@@ -42,13 +42,16 @@ union all select '1f sum(listing_count) = listings',               f.listings, l
 union all select '1g per-source counts add up to listing_count',   f.per_source, f.listings from f
 union all select '1h sum(copies_landed) fact = listings',          f.copies,   l.copies   from f, l
 union all select '1i postings in fact = dim_job_posting rows',     f.postings, p.n        from f, p
-union all select '1j openings with negative days_open',            f.negative_days, 0    from f
+union all select '1j jobs with negative days_listed',              f.negative_days, 0    from f
 union all select '1k Unknown member in dim_company',   (select count(*) from job_pipeline_db.marts.dim_company        where company_sk = '-1'), 1
 union all select '1l Unknown member in dim_location',  (select count(*) from job_pipeline_db.marts.dim_location       where location_sk = '-1'), 1
 union all select '1m Unknown member in dim_job_attributes', (select count(*) from job_pipeline_db.marts.dim_job_attributes where job_attributes_sk = '-1'), 1
 union all select '1n Unknown member in dim_job_posting', (select count(*) from job_pipeline_db.marts.dim_job_posting where posting_sk = '-1'), 1
 union all select '1o Unknown member in dim_source',    (select count(*) from job_pipeline_db.marts.dim_source         where source_sk = '-1'), 1
 union all select '1p Unknown member in dim_date',      (select count(*) from job_pipeline_db.marts.dim_date           where date_sk = -1), 1
+union all select '1q Unknown member in dim_role',      (select count(*) from job_pipeline_db.marts.dim_role           where role_sk = '-1'), 1
+union all select '1r Unknown member in dim_skill',     (select count(*) from job_pipeline_db.marts.dim_skill          where skill_sk = '-1'), 1
+union all select '1s bridge rows = int_job_skills rows', (select count(*) from job_pipeline_db.marts.bridge_job_skill), (select count(*) from job_pipeline_db.intermediate.int_job_skills)
 )
 select check_name, actual, expected, iff(actual = expected, 'OK', 'CHECK') as status
 from checks
@@ -72,17 +75,47 @@ group by 1, 2
 order by 2, 3 desc;
 
 
--- 3. Status --------------------------------------------------------------------------------------
+-- 3. Lifecycle -----------------------------------------------------------------------------------
+-- 3a. jobs by lifecycle status and primary source ('unknown' = aggregator-only)
 select
-    status_basis,
-    primary_source_name,
-    count(*)                                        as openings,
-    count_if(is_active)                             as active,
-    count_if(not is_active)                         as not_active,
-    round(100 * count_if(is_active) / count(*), 1)  as active_pct
-from job_pipeline_db.intermediate.int_job_openings
+    f.lifecycle_status,
+    s.source_name                                        as primary_source,
+    sum(f.job_count)                                     as jobs,
+    count_if(f.opening_date_sk <> -1)                    as new_openings,
+    median(f.days_listed)                                as median_days_listed
+from job_pipeline_db.marts.fct_jobs f
+join job_pipeline_db.marts.dim_source s on f.primary_source_sk = s.source_sk
 group by 1, 2
 order by 1, 3 desc;
+
+-- 3b. new openings and disappearances by week, next to the sources fully pulled that week
+with opened as (
+    select d.week_start_date, count(*) as new_openings
+    from job_pipeline_db.marts.fct_jobs f
+    join job_pipeline_db.marts.dim_date d on f.opening_date_sk = d.date_sk
+    where f.opening_date_sk <> -1
+    group by 1
+),
+gone as (
+    select d.week_start_date, count(*) as disappeared
+    from job_pipeline_db.marts.fct_jobs f
+    join job_pipeline_db.marts.dim_date d on f.disappeared_date_sk = d.date_sk
+    where f.disappeared_date_sk <> -1
+    group by 1
+),
+coverage as (
+    select week_start_date, listagg(iff(is_full_pull, source_name, null), ', ') as fully_pulled
+    from job_pipeline_db.intermediate.int_source_weeks
+    group by 1
+)
+select c.week_start_date,
+       coalesce(o.new_openings, 0) as new_openings,
+       coalesce(g.disappeared, 0)  as disappeared,
+       c.fully_pulled
+from coverage c
+left join opened o on o.week_start_date = c.week_start_date
+left join gone g   on g.week_start_date = c.week_start_date
+order by c.week_start_date;
 
 
 -- 4. Matching ------------------------------------------------------------------------------------

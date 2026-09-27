@@ -1,6 +1,10 @@
 <!-- dbt/data_modeling/data_model.md -->
 # Data Model — Job Market Data Pipeline (Saudi Arabia)
 
+> **Superseded by [`data_model_v3.md`](data_model_v3.md) (27 September 2026).** The marts now follow
+> data model v3: one fact table with six date roles, dim_role, dim_skill and bridge_job_skill. This
+> file describes the marts of version 2.1 and is kept for reference.
+
 Target dimensional model for the curated job-market dataset, designed before the intermediate and marts layers were built, following the dimensional modeling process: business questions → business process → grain → dimensions → measures → validation.
 
 |                        |                                                                                                                                         |

@@ -7,8 +7,9 @@ everything in this folder turns them into a clean, tested, analysis-ready star s
 ```
 RAW (Snowflake)  →  staging  →  intermediate            →  marts
 6 VARIANT tables    6 views      int_landed_files          fct_jobs
-                                 int_board_pulls           + 6 dimensions
-                                 int_source_weeks          (tables)
+                                 int_board_pulls           + 8 dimensions
+                                 int_source_weeks          + bridge_job_skill
+                                                           (tables)
                                  int_job_listings
                                  int_listing_groups
                                  int_match_candidates
@@ -224,10 +225,13 @@ Parameters are dbt vars in `dbt_project.yml` (`fuzzy_match_function`, `fuzzy_mat
 
 ## Marts layer
 
-`fct_jobs` (one job opening: a job posting in one Saudi location) and six dimensions:
-`dim_job_posting`, `dim_company`, `dim_location`, `dim_job_attributes`, `dim_date` (role-playing:
-posted, first seen, last seen) and `dim_source`. Every dimension has an Unknown member (`'-1'`).
-Columns and measures: `data_modeling/data_model.md`, Sections 6 and 7, and `models/marts/schema.yml`.
+A star schema (data model v3, `data_modeling/data_model_v3.md`): `fct_jobs` (one job: a job
+advertisement in one Saudi location, after cross-source matching) and eight dimensions:
+`dim_job_posting`, `dim_company`, `dim_location`, `dim_role` (role family and job category),
+`dim_job_attributes`, `dim_date` (role-playing: posted, first seen, last seen, opening, open until,
+disappeared), `dim_source` and `dim_skill`, reached through `bridge_job_skill`. Every dimension has an
+Unknown member (`'-1'`). Columns and tests: `models/marts/schema.yml`. Answers to Q1 to Q9:
+`analyses/business_questions.sql`.
 
 ## Tests and results
 
@@ -236,10 +240,10 @@ build: 202 pass, 1 warning (one listing whose title normalizes to empty).
 
 - **Keys and grain:** `unique` / `not_null` on every key; `posting_sk` + `location_sk` unique in `fct_jobs`.
 - **Vocabularies:** `accepted_values` on employment type, workplace type, remote status, experience level, location level, source type, status basis.
-- **Referential integrity:** `relationships` on the eight fact keys; exactly one Unknown member per dimension (`tests/generic/has_one_unknown_member.sql`).
+- **Referential integrity:** `relationships` on every fact and bridge key, including the six date roles; exactly one Unknown member per dimension (`tests/generic/has_one_unknown_member.sql`).
 - **Reconciliation:** RAW → staging → listings → matched → fact (`tests/assert_*`).
 - **Matching:** one representative listing per opening; never two postings of one publisher in one opening.
-- **Status:** `is_active` known exactly when `status_basis = 'employer board'`; ATS pulls must not collapse.
+- **Lifecycle:** `lifecycle_status` is unknown exactly for aggregator-only jobs; a disappeared date exactly for disappeared jobs; an opening date only on the first seen date; ATS pulls must not collapse.
 
 RAW-to-staging counts and the layer checks are re-created by `analyses/pipeline_audit.sql` and
 `analyses/model_checks.sql`; the recorded numbers are in `data_model.md`, Section 12, and are not

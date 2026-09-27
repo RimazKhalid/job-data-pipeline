@@ -40,7 +40,7 @@ job-data-pipeline/
 ├── source_investigation/  Which sources were evaluated, selected or excluded, and why
 ├── snowflake/         RAW layer (warehouse, stage, tables, COPY INTO), roles and grants, curated stage
 ├── dbt/               Transformation layer: staging, intermediate, marts; data model in dbt/data_modeling/
-├── final_datasets/    The seven MARTS tables as CSV, with row counts and columns
+├── final_datasets/    The MARTS tables as CSV, with row counts and columns
 ├── adls/adf/          Azure Data Factory design notes
 ├── .env.example       Template for API keys, ADLS and Snowflake settings (placeholders only)
 ├── requirements.txt
