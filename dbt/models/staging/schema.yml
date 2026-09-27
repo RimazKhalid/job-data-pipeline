@@ -39,7 +39,7 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
       - name: ingest_date
         description: "Collection date, read from the ADLS landing path (ingest_date=YYYY-MM-DD)."
         data_tests:
@@ -88,7 +88,7 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
       - name: ingest_date
         description: "Collection date, read from the ADLS landing path (ingest_date=YYYY-MM-DD)."
         data_tests:
@@ -131,7 +131,7 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
       - name: ingest_date
         description: "Collection date, read from the ADLS landing path (ingest_date=YYYY-MM-DD)."
         data_tests:
@@ -185,7 +185,7 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
       - name: ingest_date
         description: "Collection date, read from the ADLS landing path (ingest_date=YYYY-MM-DD)."
         data_tests:
@@ -234,7 +234,7 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
 
   - name: stg_jsearch_jobs
     description: "JSearch postings, one row per posting, keyed on job_uid. Copies landed by overlapping queries are removed here."
@@ -270,4 +270,9 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
+      - name: country_raw
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['SA']

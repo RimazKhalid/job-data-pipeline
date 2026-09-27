@@ -23,11 +23,14 @@
 
 {#
     The board a landed file belongs to, taken from the file name:
-        workable/ingest_date=2026-09-16/salla.json  ->  salla
+        workable/ingest_date=2026-09-16/salla.json               ->  salla
+        greenhouse/ingest_date=2026-09-16/cssmerge_jobs.json     ->  cssmerge
+        smartrecruiters/ingest_date=2026-09-25/AccorHotel_jobs.json  ->  accorhotel
     A board is the unit that gets pulled, so "was this board pulled again?" is answered by
-    the file, not by any field inside the payload. Lower-cased so the same board groups
-    together across snapshots.
+    the file, not by any field inside the payload. Lower-cased, and a trailing "_jobs" removed,
+    so the same board groups together across snapshots even though some sources' file names
+    changed (SmartRecruiters: <company>.json -> <company>_jobs.json; Greenhouse has both forms).
 #}
 {% macro board_from_path(column) %}
-    lower(split_part(split_part({{ column }}, '/', -1), '.json', 1))
+    regexp_replace(lower(split_part(split_part({{ column }}, '/', -1), '.json', 1)), '_jobs$', '')
 {% endmacro %}

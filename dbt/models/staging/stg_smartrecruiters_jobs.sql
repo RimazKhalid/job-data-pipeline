@@ -97,6 +97,8 @@ deduped as (
         *,
         min(ingested_at) over (partition by source_job_id) as first_seen_at,
         max(ingested_at) over (partition by source_job_id) as last_seen_at,
+        count(*)         over (partition by source_job_id) as copies_landed,
+
         -- open when any copy of the posting sits in the latest pull of its own board. Comparing
         -- against the latest date of the whole source would mark every board that was not
         -- re-pulled as closed

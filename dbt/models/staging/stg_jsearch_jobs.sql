@@ -19,6 +19,12 @@
 --      windows overlap heavily: 3,089 rows for 1,924 postings. Keeping them would fail a
 --      unique test on source_job_id, this model's key. The same real job listed on a
 --      different source carries a different id and is resolved in the intermediate layer.
+--
+--   5. is_remote keeps job_is_remote as true / false. workplace_type_raw can only say 'Remote',
+--      so without this column a non-remote JSearch job would be indistinguishable from an unknown
+--      one and would drop out of the remote-share question.
+--
+--   6. copies_landed: how many landed copies of this posting RAW holds, counted before dedup.
 
 with source as (
     select raw_data, file_name, loaded_at
@@ -87,11 +93,13 @@ select
     nullif(trim(job_json:job_publisher::string), '')                               as job_publisher,       -- "Jooble" appears here, confirming the two sources partially feed each other
     nullif(trim(job_json:job_id::string), '')                                      as job_id,              -- per-request id of the surviving copy, kept for traceability only, never a key
     nullif(trim(job_json:job_salary_string::string), '')                           as salary_raw,          -- the field exists on every record but is empty in all 3,089 rows collected
+    job_json:job_is_remote::boolean                                                as is_remote,           -- true / false; see note 5
 
     -- observation window across every landed copy, computed before the copies are dropped
     -- because this is the last layer where they still exist
     min(ingested_at) over (partition by source_job_id)                             as first_seen_at,
     max(ingested_at) over (partition by source_job_id)                             as last_seen_at,
+    count(*)         over (partition by source_job_id)                             as copies_landed,
 
     batch_id,
     http_status
