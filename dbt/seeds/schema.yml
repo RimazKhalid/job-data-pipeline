@@ -35,6 +35,24 @@ seeds:
           - unique
           - not_null
 
+  - name: seed_role_families
+    description: >
+      Every job category of seed_job_categories, plus Other, mapped to exactly one role family:
+      the second level of dim_role. Unknown (a title with no matching key) is dim_role's Unknown
+      member and is not listed here.
+    config:
+      column_types:
+        job_category: varchar
+        role_family: varchar
+    columns:
+      - name: job_category
+        data_tests:
+          - unique
+          - not_null
+      - name: role_family
+        data_tests:
+          - not_null
+
   - name: seed_company_aliases
     description: >
       Company spellings mapped to one standard name, with recruitment agencies flagged.

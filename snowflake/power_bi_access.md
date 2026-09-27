@@ -71,24 +71,29 @@ that also holds `JOB_PIPELINE_DEV` or `ACCOUNTADMIN`.
 | Server | `<account_identifier>.snowflakecomputing.com` |
 | Warehouse | The warehouse granted to the reporter |
 | Advanced → Role | `JOB_PIPELINE_REPORTER` |
-| Navigator | `JOB_PIPELINE_DB` → `MARTS` → the seven tables |
-| Mode | **Import**: the star is small (13,163 fact rows), and a refresh after each pipeline run is enough |
+| Navigator | `JOB_PIPELINE_DB` → `MARTS` → the ten tables (fact, eight dimensions, bridge) |
+| Mode | **Import**: the star is small (13,164 fact rows on 27 September), and a refresh after each pipeline run is enough |
 | Credentials | Entered in Power BI's credential store, never written into the `.pbix` or the repo |
 
-Relationships in the model follow the star: each dimension one-to-many to `fct_jobs`. `dim_date` is
-related three times, with `posting_date_sk` active and `first_seen_date_sk` and `last_seen_date_sk`
-inactive, used through `USERELATIONSHIP` in DAX. Measures:
+Relationships in the model follow the star (data model v3, section 7.4): each dimension one-to-many
+to `fct_jobs`, filtering from the dimension to the fact. `dim_date` is related in six roles
+(`posting_date_sk`, `first_seen_date_sk`, `last_seen_date_sk`, `opening_date_sk`,
+`open_until_date_sk`, `disappeared_date_sk`); one is active, the others are used through
+`USERELATIONSHIP` in DAX. Skills: `dim_skill` one-to-many `bridge_job_skill` many-to-one `fct_jobs`,
+with the bridge to fact relationship filtering in both directions. Measures:
 
 ```
-Job openings     = SUM ( fct_jobs[job_count] )
-Job postings     = DISTINCTCOUNT ( fct_jobs[posting_sk] )
-Listings         = SUM ( fct_jobs[listing_count] )
-Median days open = MEDIAN ( fct_jobs[days_open] )
+Job openings        = SUM ( fct_jobs[job_count] )
+Job postings        = DISTINCTCOUNT ( fct_jobs[posting_sk] )
+Listings            = SUM ( fct_jobs[listing_count] )
+Jobs with skill     = DISTINCTCOUNT ( bridge_job_skill[job_sk] )
+New openings        = CALCULATE ( SUM ( fct_jobs[job_count] ), fct_jobs[opening_date_sk] <> -1 )
+Median days listed  = MEDIAN ( fct_jobs[days_listed] )
 ```
 
-`is_active` is empty for aggregator-only openings (`status_basis = 'aggregator query'`). An
-"active jobs" visual must filter to `status_basis = 'employer board'`, or show the blank value
-as "no status" (`dbt/data_modeling/aggregator_status.md`).
+`lifecycle_status` is `unknown` for aggregator-only jobs (`status_basis = 'aggregator query'`): a
+query result is not a full list, so a missing listing proves nothing. Visuals about open,
+disappeared or new jobs describe employer-board jobs, and say so.
 
 ## 5. Checks before the presentation
 

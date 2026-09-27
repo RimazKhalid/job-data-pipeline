@@ -1,6 +1,10 @@
 <!-- final_datasets/README.md -->
 # Final datasets — Job Market Data Pipeline (Saudi Arabia)
 
+> These files are the 26 September export of the previous marts (seven tables). The marts now follow
+> data model v3 (ten tables: fct_jobs with six date roles, dim_role, dim_skill, bridge_job_skill), so
+> they are exported again after the next full build.
+
 Exports of the seven tables in Snowflake schema `JOB_PIPELINE_DB.MARTS`: the star schema that
 Power BI reads. One CSV per table, UTF-8, with a header row.
 
