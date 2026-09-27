@@ -39,13 +39,13 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
       - name: ingest_date
         description: "Collection date, read from the ADLS landing path (ingest_date=YYYY-MM-DD)."
         data_tests:
           - not_null
       - name: is_active
-        description: "True when the posting is present in the most recent snapshot of this source. A posting missing from the latest snapshot has been closed."
+        description: "True when the posting appears in the latest pull of the board it came from (for Greenhouse, of any board that listed it). A posting missing from its board's latest pull has been closed. A board that was not pulled again keeps its postings' last known state, so a partial pull never marks unchecked boards as closed."
         data_tests:
           - not_null
       - name: country_raw
@@ -88,13 +88,13 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
       - name: ingest_date
         description: "Collection date, read from the ADLS landing path (ingest_date=YYYY-MM-DD)."
         data_tests:
           - not_null
       - name: is_active
-        description: "True when the posting is present in the most recent snapshot of this source. A posting missing from the latest snapshot has been closed."
+        description: "True when the posting appears in the latest pull of the board it came from (for Greenhouse, of any board that listed it). A posting missing from its board's latest pull has been closed. A board that was not pulled again keeps its postings' last known state, so a partial pull never marks unchecked boards as closed."
         data_tests:
           - not_null
 
@@ -131,13 +131,13 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
       - name: ingest_date
         description: "Collection date, read from the ADLS landing path (ingest_date=YYYY-MM-DD)."
         data_tests:
           - not_null
       - name: is_active
-        description: "True when the posting is present in the most recent snapshot of this source. A posting missing from the latest snapshot has been closed."
+        description: "True when the posting appears in the latest pull of the board it came from (for Greenhouse, of any board that listed it). A posting missing from its board's latest pull has been closed. A board that was not pulled again keeps its postings' last known state, so a partial pull never marks unchecked boards as closed."
         data_tests:
           - not_null
       - name: country_raw
@@ -185,13 +185,13 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
       - name: ingest_date
         description: "Collection date, read from the ADLS landing path (ingest_date=YYYY-MM-DD)."
         data_tests:
           - not_null
       - name: is_active
-        description: "True when the posting is present in the most recent snapshot of this source. A posting missing from the latest snapshot has been closed."
+        description: "True when the posting appears in the latest pull of the board it came from (for Greenhouse, of any board that listed it). A posting missing from its board's latest pull has been closed. A board that was not pulled again keeps its postings' last known state, so a partial pull never marks unchecked boards as closed."
         data_tests:
           - not_null
       - name: country_raw
@@ -234,7 +234,7 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
 
   - name: stg_jsearch_jobs
     description: "JSearch postings, one row per posting, keyed on job_uid. Copies landed by overlapping queries are removed here."
@@ -270,4 +270,9 @@ models:
         data_tests:
           - accepted_values:
               arguments:
-                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Other']
+                values: ['Full-time', 'Part-time', 'Contract', 'Internship', 'Temporary', 'Volunteer', 'Full-time and Part-time', 'Other']
+      - name: country_raw
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['SA']

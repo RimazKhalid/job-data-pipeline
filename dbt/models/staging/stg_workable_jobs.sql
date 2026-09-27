@@ -14,13 +14,22 @@
 --      description is HTML; stripping happens in intermediate.
 --   6. posting_date_raw: published_on / created_at are date-only, converted to midnight UTC.
 --   7. Added department, function, industry, education.
+--   8. copies_landed: how many landed copies of this posting RAW holds (all snapshots), counted
+--      before dedup because this is the last layer where the copies exist. Used by the quality
+--      measures in fct_job_listings.
 
 with source as (
     select
         raw_data,
         file_name,
         loaded_at,
-        {{ ingest_date_from_path('file_name') }} as ingest_date
+        {{ ingest_date_from_path('file_name') }} as ingest_date,
+        -- latest pull of the board this file belongs to. Taken from the landed files, before they
+        -- are flattened into jobs, so a board whose latest pull returned no jobs still counts as
+        -- pulled on that date and its old postings are correctly closed
+        max({{ ingest_date_from_path('file_name') }}) over (
+            partition by {{ board_from_path('file_name') }}
+        ) as board_latest_pull
     from {{ source('raw', 'raw_workable') }}
 ),
 
@@ -29,6 +38,7 @@ flattened as (
         file_name,
         loaded_at,
         ingest_date,
+        board_latest_pull,
         raw_data:name::string as account_name,
         job.value             as job_json
     from source,
@@ -85,6 +95,7 @@ renamed as (
 
         -- lineage
         ingest_date,
+        board_latest_pull,
         loaded_at,
         file_name
     from flattened
@@ -95,7 +106,11 @@ deduped as (
         *,
         min(ingested_at) over (partition by source_job_id, city_raw) as first_seen_at,
         max(ingested_at) over (partition by source_job_id, city_raw) as last_seen_at,
-        max(ingest_date) over ()                                     as latest_source_ingest_date
+        count(*)         over (partition by source_job_id, city_raw) as copies_landed,
+        -- open when any copy of the posting sits in the latest pull of its own board. Comparing
+        -- against the latest date of the whole source would mark every board that was not
+        -- re-pulled as closed
+        max(iff(ingest_date = board_latest_pull, 1, 0)) over (partition by source_job_id, city_raw) = 1 as is_active
     from renamed
     qualify row_number() over (
         partition by source_job_id, city_raw
@@ -105,6 +120,5 @@ deduped as (
 
 select
     {{ dbt_utils.generate_surrogate_key(['source_name', 'source_job_id', 'city_raw']) }} as source_record_sk,
-    * exclude (latest_source_ingest_date),
-    (ingest_date = latest_source_ingest_date) as is_active
+    * exclude (board_latest_pull)
 from deduped
