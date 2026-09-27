@@ -42,8 +42,10 @@ union all
 select 'pulls that failed', count_if(not is_successful)::varchar, 'each one explained'
 from {{ ref('int_board_pulls') }}
 union all
-select 'week ' || week_start_date::varchar || ' complete', min(is_complete_week)::varchar || ' (' || max(sources_with_full_pull)::varchar || ' sources full)', 'true only when all six sources were fully pulled'
-from {{ ref('int_job_weeks') }} group by week_start_date
+select 'sources fully pulled in week ' || week_start_date::varchar,
+       count_if(is_full_pull)::varchar || ' of ' || count(*)::varchar || ': ' || listagg(iff(is_full_pull, source_name, null), ', '),
+       'read period comparisons against this'
+from {{ ref('int_source_weeks') }} group by week_start_date
 union all
 select 'jobs with a skill (full descriptions)',
        count(distinct s.job_sk)::varchar || ' of ' || (select count_if(description_basis = 'full') from {{ ref('int_job_openings') }})::varchar,
