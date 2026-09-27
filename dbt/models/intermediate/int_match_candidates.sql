@@ -18,7 +18,16 @@
 --   jaro_winkler_score  Snowflake's JAROWINKLER_SIMILARITY, 0 to 100
 
 with listings as (
-    select *
+    select
+        *,
+        -- the listing that stands for the group in a review: best source, then earliest, then
+        -- source_record_sk. The last key breaks ties (one Jooble page lands every posting at the
+        -- same second), so the same listing is chosen on every build and the labels in
+        -- seed_match_review, keyed by listing_a and listing_b, keep joining.
+        row_number() over (
+            partition by match_group
+            order by source_priority, first_seen_at, source_record_sk
+        ) as group_rank
     from {{ ref('int_listing_groups') }}
     where is_matchable
 ),
@@ -26,17 +35,14 @@ with listings as (
 groups as (
     select
         match_group,
+        -- title_norm, company_norm and city_std define the group, so any value is the value
         any_value(title_norm)                                               as title_norm,
         any_value(company_norm)                                             as company_norm,
         any_value(city_std)                                                 as city_std,
         min(first_seen_at)                                                  as first_seen_at,
-        -- the listing that stands for the group in a review: best source, then earliest
-        min_by(source_record_sk, source_priority * 1000000000
-                                 + datediff('second', '2020-01-01'::timestamp_tz, first_seen_at)) as listing_id,
-        min_by(source_name, source_priority * 1000000000
-                            + datediff('second', '2020-01-01'::timestamp_tz, first_seen_at))      as source_name,
-        min_by(job_title, source_priority * 1000000000
-                          + datediff('second', '2020-01-01'::timestamp_tz, first_seen_at))        as job_title,
+        max(iff(group_rank = 1, source_record_sk, null))                    as listing_id,
+        max(iff(group_rank = 1, source_name, null))                         as source_name,
+        max(iff(group_rank = 1, job_title, null))                           as job_title,
         {{ level_signature('any_value(title_norm)') }}                      as level_signature
     from listings
     group by match_group
