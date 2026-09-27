@@ -14,7 +14,6 @@ RAW (Snowflake)  →  staging  →  intermediate            →  marts
                                  int_match_candidates
                                  int_jobs_matched
                                  int_job_openings
-                                 int_job_weeks
                                  int_job_skills
                                  (tables)
 ```
@@ -212,13 +211,12 @@ Design: data model v2. The rules, parameters and checks of this layer are descri
 |---|---|---|
 | `int_landed_files` | One landed file or API page | File-level metadata from RAW: board, pull date, query label, whether the payload is a job list |
 | `int_board_pulls` | One pull (ATS board per date; aggregator per date) | Pull calendar: successful pulls only count as evidence; baseline pull |
-| `int_source_weeks` | One source per week | Whether the source was fully pulled that week (aggregators: the whole baseline campaign repeated) |
+| `int_source_weeks` | One source per week | Collection coverage for the quality report: whether each source was fully pulled that week (aggregators: the whole baseline campaign repeated) |
 | `int_job_listings` | One listing | Union of the six staging models; HTML stripped; city, region, category, company, level and salary standardized; dates in Asia/Riyadh; lifecycle evidence |
 | `int_listing_groups` | One listing, with its exact group | Tier 1 matching: normalized title + company + city, publisher rule, rank-to-rank pairing |
 | `int_match_candidates` | One candidate pair of exact groups | Guarded fuzzy candidates with Jaccard and Jaro-Winkler scores, no threshold |
 | `int_jobs_matched` | One listing, with its job | Tier 2 matching behind `var('fuzzy_match_threshold')` (off while null); `job_sk`, representative listing, `match_tier` |
-| `int_job_openings` | One job | Survivorship once; lifecycle: `lifecycle_status`, `opening_date`, `open_until_date`, `disappeared_date`, `days_listed`; parsed salary |
-| `int_job_weeks` | One job per open week | Stock and flow flags for the weekly questions; `is_complete_week` |
+| `int_job_openings` | One job | Survivorship once; lifecycle: `lifecycle_status`, `opening_date`, `open_until_date`, `disappeared_date`, `days_listed`; parsed salary. Feeds the single fact table `fct_jobs` |
 | `int_job_skills` | One job per skill | Skills from `seed_skills` in titles and descriptions of all the job's listings |
 
 Parameters are dbt vars in `dbt_project.yml` (`fuzzy_match_function`, `fuzzy_match_threshold`,

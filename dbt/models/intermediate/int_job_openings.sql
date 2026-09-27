@@ -24,8 +24,8 @@
 --                      slice, so a missing listing proves nothing).
 --   open_until_date    last day the job counts as open: the day before it disappeared, else its
 --                      latest evidence plus var('recent_window_days'), never after the latest
---                      successful pull. The weekly questions count a job open in every week
---                      between first_seen_date and open_until_date (int_job_weeks).
+--                      successful pull. A job is open during a period when
+--                      first_seen_date <= period end and open_until_date >= period start.
 --   opening_date       first_seen_date, only for jobs not seen in any baseline pull: those are
 --                      new openings; a baseline job existed before the pipeline looked.
 --

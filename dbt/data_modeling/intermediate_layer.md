@@ -2,8 +2,9 @@
 # Intermediate layer
 
 The intermediate layer turns the six staging models into one standardized set of listings, matches
-the listings of one job across sources, and prepares what the marts of data model v2 need: the job
-lifecycle, the weekly view, the skills, and the evidence for the data quality report. Every model is
+the listings of one job across sources, and prepares what the marts need: one row per job for the
+single fact table (star schema), the job lifecycle, the skills, and the evidence for the data quality
+report. Every model is
 a table in the `INTERMEDIATE` schema.
 
 ## Lineage
@@ -11,17 +12,17 @@ a table in the `INTERMEDIATE` schema.
 ```
 RAW ──► int_landed_files ──► int_board_pulls ──┐
             │                                  │
-            └──────────► int_source_weeks ─────┼───────────────────────┐
-                                               ▼                       │
-stg_* (6) ──────────────────────────► int_job_listings                 │
-                                               │                       │
-                                      int_listing_groups               │
-                                               │                       │
-                                      int_match_candidates             │
-                                               │                       │
+            └──────────► int_source_weeks (collection coverage, quality report)
+                                               ▼
+stg_* (6) ──────────────────────────► int_job_listings
+                                               │
+                                      int_listing_groups
+                                               │
+                                      int_match_candidates
+                                               │
                                       int_jobs_matched ──► int_job_skills
-                                               │                       │
-                                      int_job_openings ──► int_job_weeks ◄┘
+                                               │
+                                      int_job_openings ──► fct_jobs (one fact table: star schema)
 ```
 
 `int_landed_files` is the only intermediate model that reads RAW, and it reads file-level metadata
@@ -44,8 +45,8 @@ files into postings, so a pull that failed or returned nothing leaves no trace t
 | Fuzzy match | Two exact groups of one company and city, with no shared publisher and the same level words, merged when the score reaches the threshold and each is the other's best candidate. Off while `fuzzy_match_threshold` is null | `int_match_candidates`, `int_jobs_matched` |
 | Survivorship | Representative listing by `source_priority`; longest description; first known value by priority for attributes; the source's level before a title level | `int_job_openings` |
 | Lifecycle | `disappeared` when every ATS listing disappeared; `open` when one is still on its board; `unknown` for aggregator-only jobs | `int_job_openings` |
-| Open interval | From `first_seen_date` to `open_until_date`: the day before disappearance, else the latest evidence plus `recent_window_days`, never after the latest successful pull | `int_job_openings`, `int_job_weeks` |
-| Complete week | Every source has a full pull in the week; weekly answers are reported for complete weeks only | `int_job_weeks` |
+| Open interval | From `first_seen_date` to `open_until_date`: the day before disappearance, else the latest evidence plus `recent_window_days`, never after the latest successful pull. A job is open during a period when `first_seen_date` <= period end and `open_until_date` >= period start | `int_job_openings` |
+| Collection coverage | Which sources were fully pulled in each week, so a change between periods is read against it | `int_source_weeks` |
 | Skills | Whole-word match of `seed_skills` on titles and descriptions of all listings of the job | `int_job_skills` |
 
 ## Parameters (`dbt_project.yml`)
@@ -88,8 +89,7 @@ stayed at 43 or below.
 
 - `dbt build --select intermediate` runs the model tests in `models/intermediate/schema.yml` and the
   singular tests in `tests/`: listings kept, publisher rule, one representative per job, fuzzy merges
-  keep level words, lifecycle consistency, job weeks inside the open interval, multi-city texts
-  without a city, valid salary amounts.
+  keep level words, lifecycle consistency, multi-city texts without a city, valid salary amounts.
 - `analyses/intermediate_checks.sql` returns the layer's numbers in one result set for the quality
   report: listings and jobs, match tiers, location levels, level basis, salaries parsed, lifecycle,
-  baseline and new jobs, failed pulls, complete weeks, skill coverage.
+  baseline and new jobs, failed pulls, sources fully pulled per week, skill coverage.

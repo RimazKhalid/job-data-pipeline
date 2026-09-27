@@ -268,9 +268,10 @@ models:
 
   - name: int_source_weeks
     description: >
-      One row per source per week with a successful file. is_full_pull: any successful board pull
-      for an ATS source; for an aggregator, a week that repeats the baseline campaign's queries
-      (var aggregator_campaign_coverage).
+      Collection coverage: one row per source per week with a successful file. is_full_pull: any
+      successful board pull for an ATS source; for an aggregator, a week that repeats the baseline
+      campaign's queries (var aggregator_campaign_coverage). Evidence for the data quality report:
+      it shows which sources were collected when, so a change between periods can be read against it.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -285,30 +286,6 @@ models:
       - name: is_full_pull
         data_tests:
           - not_null
-
-  - name: int_job_weeks
-    description: >
-      One row per job per week in which it was open (first_seen_date to open_until_date).
-      is_new_in_week drives the flow questions, is_complete_week says whether the week's answer
-      may be reported. Feeds fct_job_weeks.
-    data_tests:
-      - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns:
-              - job_sk
-              - week_start_date
-    columns:
-      - name: job_week_sk
-        data_tests:
-          - unique
-          - not_null
-      - name: job_sk
-        data_tests:
-          - not_null
-          - relationships:
-              arguments:
-                to: ref('int_job_openings')
-                field: job_sk
 
   - name: int_job_skills
     description: >

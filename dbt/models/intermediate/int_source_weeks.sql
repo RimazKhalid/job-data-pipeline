@@ -11,8 +11,9 @@
 --                var('aggregator_campaign_coverage') (1.0 = every baseline query). A query
 --                returns a ranked slice of the market, so a partial re-run (e.g. the general
 --                query alone on 26 September) is not a pull of the whole source.
--- int_job_weeks marks a week complete only when every source has a full pull in it; weekly
--- answers are reported for complete weeks only (data model v2, section 2).
+-- Evidence for the data quality report (sources collected per week): a count that changes between
+-- two periods is read against it, because a source missing from a period looks like a change in
+-- the market.
 
 with files as (
     select * from {{ ref('int_landed_files') }}
