@@ -104,3 +104,94 @@ seeds:
         data_tests:
           - unique
           - not_null
+  - name: seed_seniority_keywords
+    description: >
+      Title words that give a job's level when the source has no level field (data model v2,
+      dim_job_attributes). Each rule was measured on the postings whose source gives a level
+      (26 September export, 1,510 labelled postings): a word is kept only when those postings
+      agree with it at least 70% of the time. labelled_postings and rule_precision record that
+      measurement. A row with an empty experience_level blocks the rules below it
+      ("assistant manager": 45% Mid-Senior). The lowest priority wins; "junior" (40% Entry),
+      "trainee" (44%) and "consultant" (64%) were measured and left out.
+    config:
+      column_types:
+        keyword: varchar
+        experience_level: varchar
+        priority: number
+        labelled_postings: number
+        rule_precision: number(4,2)
+    columns:
+      - name: keyword
+        data_tests:
+          - unique
+          - not_null
+      - name: experience_level
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Internship', 'Entry', 'Associate', 'Mid-Senior', 'Director', 'Executive']
+      - name: priority
+        data_tests:
+          - not_null
+
+  - name: seed_currency_rates
+    description: >
+      Rate to Saudi riyals for each salary currency seen. The riyal is pegged at 3.75 per US dollar.
+    config:
+      column_types:
+        currency: varchar
+        sar_per_unit: number(10,4)
+    columns:
+      - name: currency
+        data_tests:
+          - unique
+          - not_null
+      - name: sar_per_unit
+        data_tests:
+          - not_null
+
+  - name: seed_skills
+    description: >
+      Skill dictionary (data model v2, dim_skill). keyword is matched as a whole word, in
+      normalize_text() form, against job titles and cleaned descriptions; several keywords can
+      name one skill_name ("ms office", "microsoft office"). Built from the 26 September export:
+      a term is kept when it appears in at least 10 of the 4,304 postings with a full description
+      (postings_measured). Words that are ambiguous in job ads were measured and left out:
+      sales (a job function), kpi, hospitality, tax ("tax-free salary"), lean, soc, iam, swift,
+      react (a verb), vulnerability, .net and c# (lost when punctuation is removed).
+    config:
+      column_types:
+        keyword: varchar
+        skill_name: varchar
+        skill_group: varchar
+        postings_measured: number
+    columns:
+      - name: keyword
+        data_tests:
+          - unique
+          - not_null
+      - name: skill_name
+        data_tests:
+          - not_null
+      - name: skill_group
+        data_tests:
+          - not_null
+
+  - name: seed_match_review
+    description: >
+      Manual verdicts on candidate matches (data model v2, section 8.7). One row per reviewed pair
+      of listings, stored by source_record_sk so a verdict survives rebuilds. Filled from
+      analyses/fuzzy_review_sample.sql and analyses/match_review_sample.sql; read by
+      analyses/match_threshold_evaluation.sql to choose the fuzzy threshold.
+    config:
+      column_types:
+        listing_a: varchar
+        listing_b: varchar
+        is_same_job: boolean
+        reviewer: varchar
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - listing_a
+              - listing_b
