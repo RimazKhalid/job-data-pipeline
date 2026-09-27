@@ -43,6 +43,27 @@ models:
       +materialized: table
       +schema: marts
 
+# Parameters of the intermediate layer (data model v2). A value marked TBD is an open decision
+# that is settled from a measurement, never by default. Override one run with
+#   dbt build --vars '{fuzzy_match_function: jaccard, fuzzy_match_threshold: 80}'
+vars:
+  # Dates are taken in the Saudi business time zone, so a pull lands in the week it happened in.
+  business_timezone: 'Asia/Riyadh'
+  # Fuzzy tier of cross-source matching (int_jobs_matched). TBD: both are chosen from the labelled
+  # sample (seed_match_review, analyses/match_threshold_evaluation.sql). While the threshold is
+  # null the fuzzy tier is off and only exact matches are merged.
+  fuzzy_match_function: null        # 'jaccard' (shared title words) or 'jaro_winkler'
+  fuzzy_match_threshold: null       # score from 0 to 100
+  # K: successful pulls of its board that must miss an ATS posting before it counts as
+  # disappeared. TBD; 1 reproduces the current staging rule (absent from the latest pull).
+  disappearance_misses: 1
+  # Days a job stays counted as open after its last evidence (its board's latest successful pull,
+  # or its last sighting on an aggregator). TBD; currently 7, the weekly collection interval.
+  recent_window_days: 7
+  # Share of the baseline campaign's queries that an aggregator week must repeat to count as a full
+  # pull. 1.0 is the definition of a full campaign: every baseline query run again.
+  aggregator_campaign_coverage: 1.0
+
 # Lookup tables kept in Git (cities, job categories, companies, experience levels, sources).
 seeds:
   job_pipeline:
