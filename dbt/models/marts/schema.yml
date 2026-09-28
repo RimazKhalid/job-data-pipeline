@@ -1,5 +1,5 @@
 # dbt/models/marts/schema.yml
-# Star schema of data model v3: fct_jobs, 8 dimensions, and bridge_job_skill.
+# Star schema (data_model.md): fct_jobs, 8 dimensions, and bridge_job_skill.
 version: 2
 
 models:
@@ -9,7 +9,7 @@ models:
       listings of the same job on several sources have been merged. Accumulating snapshot with six
       date roles (posted, first seen, last seen, opening, open until, disappeared).
       Jobs = SUM(job_count); postings = COUNT(DISTINCT posting_sk); listings = SUM(listing_count).
-      Data model v3, sections 4 and 7.1.
+      data_model.md, sections 4 and 7.1.
     data_tests:
       # the grain: one row per posting and location
       - dbt_utils.unique_combination_of_columns:
@@ -405,14 +405,13 @@ models:
           - not_null
 
   - name: dim_source
-    description: "The six sources from seed_sources, plus Unknown."
+    description: "The six sources from seed_sources. No Unknown member: every job has a known source."
     columns:
       - name: source_sk
-        description: "Hash of source_name; '-1' for Unknown."
+        description: "Hash of source_name."
         data_tests:
           - unique
           - not_null
-          - has_one_unknown_member
       - name: source_name
         description: "workable, smartrecruiters, ashby, greenhouse, jsearch or jooble."
       - name: source_type
@@ -421,7 +420,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['ATS', 'Aggregator', 'Unknown']
+                values: ['ATS', 'Aggregator']
       - name: collection_method
         description: "Company board API or Query matrix API."
       - name: source_priority

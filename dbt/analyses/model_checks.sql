@@ -47,7 +47,7 @@ union all select '1k Unknown member in dim_company',   (select count(*) from job
 union all select '1l Unknown member in dim_location',  (select count(*) from job_pipeline_db.marts.dim_location       where location_sk = '-1'), 1
 union all select '1m Unknown member in dim_job_attributes', (select count(*) from job_pipeline_db.marts.dim_job_attributes where job_attributes_sk = '-1'), 1
 union all select '1n Unknown member in dim_job_posting', (select count(*) from job_pipeline_db.marts.dim_job_posting where posting_sk = '-1'), 1
-union all select '1o Unknown member in dim_source',    (select count(*) from job_pipeline_db.marts.dim_source         where source_sk = '-1'), 1
+union all select '1o dim_source rows = six sources',   (select count(*) from job_pipeline_db.marts.dim_source), 6
 union all select '1p Unknown member in dim_date',      (select count(*) from job_pipeline_db.marts.dim_date           where date_sk = -1), 1
 union all select '1q Unknown member in dim_role',      (select count(*) from job_pipeline_db.marts.dim_role           where role_sk = '-1'), 1
 union all select '1r Unknown member in dim_skill',     (select count(*) from job_pipeline_db.marts.dim_skill          where skill_sk = '-1'), 1

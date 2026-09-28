@@ -234,18 +234,18 @@ A star schema ([`data_modeling/data_model.md`](data_modeling/data_model.md), dia
 advertisement in one Saudi location, after cross-source matching) and eight dimensions:
 `dim_job_posting`, `dim_company`, `dim_location`, `dim_role` (role family and job category),
 `dim_job_attributes`, `dim_date` (role-playing: posted, first seen, last seen, opening, open until,
-disappeared), `dim_source` and `dim_skill`, reached through `bridge_job_skill`. Every dimension has an
-Unknown member (`'-1'`). Columns and tests: `models/marts/schema.yml`. Answers to Q1 to Q9:
+disappeared), `dim_source` and `dim_skill`, reached through `bridge_job_skill`. Every dimension except
+`dim_source` has an Unknown member (`'-1'`); every job has a known source. Columns and tests: `models/marts/schema.yml`. Answers to Q1 to Q9:
 `analyses/business_questions.sql`.
 
 ## Tests and results
 
-Every model, seed and test runs in `dbt build`. On the build of 2026-09-28: 322 passed,
+Every model, seed and test runs in `dbt build`. On the build of 2026-09-28: 321 passed,
 1 warning (one listing whose title normalizes to empty), 0 errors.
 
 - **Keys and grain:** `unique` / `not_null` on every key; `posting_sk` + `location_sk` unique in `fct_jobs`.
 - **Vocabularies:** `accepted_values` on employment type, workplace type, remote status, experience level, location level, source type, status basis, lifecycle status, match tier.
-- **Referential integrity:** `relationships` on every fact and bridge key, including the six date roles; exactly one Unknown member per dimension (`tests/generic/has_one_unknown_member.sql`).
+- **Referential integrity:** `relationships` on every fact and bridge key, including the six date roles; exactly one Unknown member per dimension except `dim_source` (`tests/generic/has_one_unknown_member.sql`).
 - **Reconciliation:** RAW → staging → listings → matched → fact (`tests/assert_*`).
 - **Matching:** one representative listing per opening; never two postings of one publisher in one opening.
 - **Lifecycle:** `lifecycle_status` is unknown exactly for aggregator-only jobs; a disappeared date exactly for disappeared jobs; an opening date only on the first seen date; a disappeared date after the last employer-board sighting; ATS pulls must not collapse.

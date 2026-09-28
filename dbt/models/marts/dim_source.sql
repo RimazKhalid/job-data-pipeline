@@ -1,6 +1,7 @@
 -- dbt/models/marts/dim_source.sql
 --
--- One row per source, from seed_sources, plus the Unknown member ('-1').
+-- One row per source, from seed_sources. No Unknown member: every job has a representative
+-- listing, and every listing comes from a known source.
 -- The fact joins it through primary_source_sk (the source of the representative listing).
 
 select
@@ -10,7 +11,3 @@ select
     collection_method,
     source_priority
 from {{ ref('seed_sources') }}
-
-union all
-
-select '-1', 'Unknown', 'Unknown', 'Unknown', null

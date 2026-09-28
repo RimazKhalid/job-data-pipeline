@@ -7,7 +7,7 @@ Parquet, `stjobdata26/curated/<table>/export_date=<date>/`.
 
 | | |
 |---|---|
-| **Generated** | 2026-09-28, from the pipeline run `20260928T113426Z` (final build: 322 checks passed, 1 warning, 0 errors) |
+| **Generated** | 2026-09-28, from the pipeline run `20260928T151131Z` (final build: 321 checks passed, 1 warning, 0 errors) |
 | **Observation window** | September 2026: employer boards collected several times between 9 and 28 September; aggregators collected as a query campaign on 9–12 September and repeated on 27–28 September |
 | **Sources** | Ashby, Greenhouse, SmartRecruiters, Workable (employer job boards); Jooble, JSearch (aggregators) |
 | **Model** | `dbt/data_modeling/data_model.md`; diagram `dbt/data_modeling/schema_diagram.png` |
@@ -23,7 +23,7 @@ Parquet, `stjobdata26/curated/<table>/export_date=<date>/`.
 | `dim_role.csv` | 20 | One job category with its role family (+ Unknown) |
 | `dim_job_attributes.csv` | 83 | One observed combination of employment type, workplace type, remote status, experience level and its basis (+ Unknown) |
 | `dim_date.csv` | 3,003 | One day, from the oldest posting date to the latest collection (+ Unknown `-1`) |
-| `dim_source.csv` | 7 | One source (6 + Unknown) |
+| `dim_source.csv` | 6 | One source |
 | `dim_skill.csv` | 126 | One canonical skill (+ Unknown) |
 | `bridge_job_skill.csv` | 22,898 | One job per skill mentioned in its titles or descriptions |
 
@@ -86,4 +86,8 @@ For each table, in a Snowflake worksheet: `select * from job_pipeline_db.marts.<
 **Download results → CSV**. Row counts were checked against `show tables in schema
 job_pipeline_db.marts` after the final build.
 
+## Known limitations
 
+See `dbt/data_modeling/data_model.md`, section 12. In short: cross-source overlap is a lower
+bound (exact matching only); experience level is sparse and partly read from titles; Jooble has no
+posting date and a snippet description; aggregator-only jobs have `lifecycle_status = 'unknown'`.
