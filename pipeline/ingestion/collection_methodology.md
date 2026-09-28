@@ -69,10 +69,10 @@ file path, the file's SHA-256 and any error, so a landed file can be checked aga
 
 | Source | Boards | Collections (UTC) |
 |---|---|---|
-| Ashby | 10 | 16, 24 and 25 September 2026 |
-| Greenhouse | 17 | 9, 24 and 25 September 2026 |
-| SmartRecruiters | 14 | 19, 24 and 25 September 2026 |
-| Workable | 11 | 16, 24 and 25 September 2026 |
+| Ashby | 10 | 16, 24, 25, 27 and 28 September 2026 |
+| Greenhouse | 17 | 9, 24, 25, 27 and 28 September 2026 |
+| SmartRecruiters | 14 | 19, 24, 25, 27 and 28 September 2026 |
+| Workable | 11 | 16, 24, 25, 27 and 28 September 2026 |
 
 ## 3. Aggregators: why both sources are query-scoped
 
@@ -183,8 +183,13 @@ it concludes that a query is done.
 
 | Source | Campaign | Later runs |
 |---|---|---|
-| Jooble | 9–10 September 2026 (UTC): the location layers, then the Riyadh keyword layers | 26 September: the general query `L0_general_sa` only (twice, 50 pages each) |
-| JSearch | 10–12 September 2026 (UTC): `L0`, then the coverage and `date_posted` layers | 26 September: `L0_general_sa` only (twice, 20 pages each; keys 1–3 answered 429 / 403, key 4 served the run) |
+| Jooble | 9–10 September 2026 (UTC): the location layers, then the Riyadh keyword layers | 26 September: the general query `L0_general_sa` only. 27 September: the whole campaign repeated, every baseline query label (seen file reset first; locations that timed out re-run with `jooble/rerun_locations.py`) |
+| JSearch | 10–12 September 2026 (UTC): `L0`, then the coverage and `date_posted` layers | 26 September: `L0_general_sa` only. 27–28 September: the whole campaign repeated, every baseline query label. The matrix run stopped when all keys returned 429; the missing labels were run by name with `jsearch/rerun_queries.py`, split across two team members' keys |
+
+**Week of 27 September.** Every baseline query of both aggregators was repeated, so this is the
+first week in which all six sources were fully pulled (`int_source_weeks`; `data_model.md`,
+section 10.2). JSearch pages that answered 429, 403 or 504 are landed as failed pages (101 in RAW)
+and carry no rows; each affected label was re-requested under a new batch.
 
 ## 4. Running a collection
 
@@ -204,9 +209,9 @@ build and export. The aggregators run only when named, because of their quotas:
 
 A job missing from a later ATS collection was taken down: the board lists every open job. For an
 aggregator, a job missing from a later run shows nothing unless **the same query** was repeated,
-and even then ranking changes between days. The 26 September runs repeated only `L0_general_sa`,
-which returns about 1,000 listings, so most of the campaign's listings were not returned. For this
-reason aggregator-only jobs have `lifecycle_status = 'unknown'` (`data_model.md`, section 7.1),
+and even then ranking changes between days. The campaign was repeated in full on 27–28 September,
+and still a repeated search returns a different ranking and subset, so a listing missing from it
+proves nothing. For this reason aggregator-only jobs have `lifecycle_status = 'unknown'` (`data_model.md`, section 7.1),
 and closures are counted from employer boards only.
 
 Repeating the campaign adds listings and freshness, not status. To repeat it, run the matrix
@@ -214,7 +219,12 @@ runners with the same `QUERY_LABEL`s and query bodies, and check before starting
 
 1. **Quota.** The Jooble campaign used about 770 requests, more than one key's lifetime quota;
    count the pages per `QUERY_LABEL` in RAW (`raw_jooble`, `raw_jsearch`) and make sure the keys in
-   `.env` cover them. Jooble's collector does not rotate keys.
-2. **The `seen` file.** `new` and `cum_unique` in the console are counted against the local
+   `.env` cover them. Jooble's collector does not rotate keys. A JSearch key holds about 200
+   requests; the whole campaign needs several keys from separate accounts (a new key in the same
+   account shares its quota, and a key must be subscribed to JSearch or it answers 403).
+2. **Resuming.** When a run stops on quota or a timeout, re-run only the missing labels:
+   `py pipeline/ingestion/jsearch/rerun_queries.py <label> ...` (same query bodies as `matrix.py`,
+   no stopping rule) or `py pipeline/ingestion/jooble/rerun_locations.py <prefix> <location> ...`.
+3. **The `seen` file.** `new` and `cum_unique` in the console are counted against the local
    `seen` state of the machine that runs the collector. They do not affect what lands in RAW.
-3. **Landing.** After the run: `py pipeline/run_pipeline.py --steps upload load freshness build export`.
+4. **Landing.** After the run: `py pipeline/run_pipeline.py --steps upload load freshness build export`.

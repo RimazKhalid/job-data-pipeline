@@ -25,19 +25,19 @@ Each question has one measure, one dimension (or one hierarchy), and one time fr
 
 - **Reporting week, Sunday to Saturday.** Used for events that happen on a date: a new opening (opening date) or a disappearance (disappeared date). The week comes from the event's date role in dim_date.
 
-| **\#** | **Question**                                                                                                                            | **Time frame**               | **Data availability (build of 2026-09-27)**                                                                                    |
+| **\#** | **Question**                                                                                                                            | **Time frame**               | **Data availability (final build, 2026-09-28)**                                                                                    |
 |--------|-----------------------------------------------------------------------------------------------------------------------------------------|------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| Q1     | How many unique job openings were open in Saudi Arabia during the observation period?                                                   | Observation period           | 13,164 jobs from 13,777 listings                                                                                               |
-| Q2     | Which regions had the most open job openings during the observation period? City is the drill-down inside the same geography hierarchy. | Observation period           | 96.8% of listings at city level; 185 region-level and 261 country-level listings count at their own level only                 |
+| Q1     | How many unique job openings were open in Saudi Arabia during the observation period?                                                   | Observation period           | 19,263 jobs from 20,490 listings                                                                                               |
+| Q2     | Which regions had the most open job openings during the observation period? City is the drill-down inside the same geography hierarchy. | Observation period           | 96.3% of listings at city level; 328 region-level and 428 country-level listings count at their own level only                 |
 | Q3     | Which employers had the most open job openings during the observation period, excluding undisclosed employers and recruitment agencies? | Observation period           | Excludes the Unknown member (Employer not disclosed) and companies flagged is_recruitment_agency                               |
 | Q4     | Which role families had the most open job openings during the observation period? Job category is the drill-down.                       | Observation period           | All jobs, from titles; the share in Other is reported                                                                          |
 | Q5     | What share of open job openings during the observation period falls into each employment type?                                          | Observation period           | Jobs with a known employment type; the known share is shown with the answer                                                    |
-| Q6     | Which experience levels are most requested in each region during the observation period?                                                | Observation period           | Known for 5,248 jobs (39.9%): 1,791 from the source field, 3,457 from title rules                                              |
-| Q7     | How many new job openings appeared in each week?                                                                                        | Week of the opening date     | Jobs with an employer-board listing only: 150 so far; one more point with each pull after the baseline                         |
-| Q8     | For job openings that disappeared in each week, what was the median number of days they were listed?                                    | Week of the disappeared date | Jobs with an employer-board listing only: 141 disappeared so far                                                               |
-| Q9     | Which skills are mentioned by the largest share of open job openings that have a full description, during the observation period?       | Observation period           | 3,710 of 4,749 jobs with a full description mention at least one skill; Jooble-only jobs (snippet) are outside the denominator |
+| Q6     | Which experience levels are most requested in each region during the observation period?                                                | Observation period           | Known for 7,543 jobs (39.2%): 1,804 from the source field, 5,739 from title rules                                              |
+| Q7     | How many new job openings appeared in each week?                                                                                        | Week of the opening date     | Jobs with an employer-board listing only: 174 (150 in the week of 2026-09-20, 24 in the week of 2026-09-27)                         |
+| Q8     | For job openings that disappeared in each week, what was the median number of days they were listed?                                    | Week of the disappeared date | Jobs with an employer-board listing only: 177 disappeared (141 and 36)                                                               |
+| Q9     | Which skills are mentioned by the largest share of open job openings that have a full description, during the observation period?       | Observation period           | 5,562 of 7,443 jobs with a full description mention at least one skill; Jooble-only jobs (snippet) are outside the denominator |
 
-**Open jobs, not new openings, for composition.** Q4 to Q6 and Q9 describe the jobs open during the period. New openings are 150 employer-board jobs so far, too few to describe the market's composition; Q7 tracks them directly.
+**Open jobs, not new openings, for composition.** Q4 to Q6 and Q9 describe the jobs open during the period. New openings are 174 employer-board jobs, too few to describe the market's composition; Q7 tracks them directly.
 
 **Open during a chosen week.** A job is open during any period when its first seen date is on or before the period's end and its open-until date is on or after its start (section 7.3). Weekly comparisons are read against collection coverage (section 10.2), because a source not fully pulled in a week looks like a drop in the market.
 
@@ -47,7 +47,7 @@ Each question has one measure, one dimension (or one hierarchy), and one time fr
 
 - **Dataset reliability.** Answered in the Data quality report, section 10.
 
-- **Salary.** 283 listings (2.1%) carry a salary, too few for a market question. The field is standardised where present (section 7.1).
+- **Salary.** 371 listings (1.8%) carry a salary, too few for a market question. The field is standardised where present (section 7.1).
 
 ## 3. Business process and fact table type
 
@@ -74,9 +74,9 @@ fct_jobs is rebuilt from staging on every run, so its history is as complete as 
 
 **Several cities in one location text.** "Riyadh or Jeddah" is one job whose city is not fixed, so it is not split into two. The job is kept at the region the named cities share, else at country level. Measured: 5 listings.
 
-**Workable multi-city postings.** Workable publishes a posting open in several cities as one object per city. Each city is one job, because the source itself separates them; the posting stays one row in dim_job_posting. Measured: 13,164 jobs from 12,713 postings.
+**Workable multi-city postings.** Workable publishes a posting open in several cities as one object per city. Each city is one job, because the source itself separates them; the posting stays one row in dim_job_posting. Measured: 19,263 jobs from 18,808 postings.
 
-**Expected rows.** 13,777 listings became 13,164 jobs: exact matching merged 1,183 listings into 570 jobs. The fuzzy tier is off until its threshold is chosen (section 8.7).
+**Expected rows.** 20,490 listings became 19,263 jobs: exact matching merged 2,348 listings into 1,121 jobs. The fuzzy tier is off until its threshold is chosen (section 8.7).
 
 ## 5. Schema overview
 
@@ -170,7 +170,7 @@ Measured examples the process must catch (2026-09-24): Qiddiya Investment Compan
 | location_level | STRING      | city, region, or country                                                                |
 | location_label | STRING      | Display name: the city, "\<region\> (no city given)", or "Saudi Arabia (no city given)" |
 
-The city is looked up in the city field first, then in the location text. A match inside a longer match is part of it ("makkah" in "makkah province"). Measured on 2026-09-27: 13,331 listings at city level, 185 at region level (for example Jooble's "Al Qassim Region"), 261 at country level. No listing carries a non-Saudi country.
+The city is looked up in the city field first, then in the location text. A match inside a longer match is part of it ("makkah" in "makkah province"). Measured on 2026-09-28: 19,734 listings at city level, 328 at region level (for example Jooble's "Al Qassim Region"), 428 at country level. No listing carries a non-Saudi country.
 
 ### dim_date: when
 
@@ -300,13 +300,13 @@ Built from int_job_openings, which applies the survivorship and lifecycle rules 
 
 - Any other job: its latest evidence plus the recent window (recent_window_days, currently 7), never later than the latest successful pull. The latest evidence of an ATS listing still on its board is its board's latest successful pull; of an aggregator listing, its last seen date.
 
-**New openings.** A job is a new opening when it has an employer-board listing and none of its listings was seen in a baseline pull; its opening date is its first seen date. A job found on aggregators only never gets an opening date: first appearing in a later campaign is no more evidence of a new opening than disappearing is of a closure. On 2026-09-27, 923 jobs were outside the baseline; 773 of them were aggregator-only, and 150 are new openings.
+**New openings.** A job is a new opening when it has an employer-board listing and none of its listings was seen in a baseline pull; its opening date is its first seen date. A job found on aggregators only never gets an opening date: first appearing in a later campaign is no more evidence of a new opening than disappearing is of a closure. On 2026-09-28, 7,021 jobs were outside the baseline; 6,847 of them were aggregator-only, and 174 are new openings.
 
-**Salary.** Parsed from the salary text when it follows one grammar: currency, amount or range, period ("SAR 15000 - 17000 per month", "\$45000 per year"). Every one of the 283 salary texts on 2026-09-27 follows it. Monthly amounts are kept, yearly divided by 12, weekly multiplied by 52/12; USD is converted at 3.75 SAR per USD from seed_currency_rates. Hourly and daily amounts are not converted, because the hours and days worked per month are unknown. Salary text inside titles is not parsed.
+**Salary.** Parsed from the salary text when it follows one grammar: currency, amount or range, period ("SAR 15000 - 17000 per month", "\$45000 per year"). Every one of the 371 salary texts on 2026-09-28 follows it. Monthly amounts are kept, yearly divided by 12, weekly multiplied by 52/12; USD is converted at 3.75 SAR per USD from seed_currency_rates. Hourly and daily amounts are not converted, because the hours and days worked per month are unknown. Salary text inside titles is not parsed.
 
 ### 7.2 bridge_job_skill
 
-Grain: one row per job per skill. Built from int_job_skills (15,262 rows on 2026-09-27). A skill keyword is matched as a whole word in the titles and cleaned descriptions of every listing of the job, not only the representative.
+Grain: one row per job per skill. Built from int_job_skills (22,898 rows on 2026-09-28). A skill keyword is matched as a whole word in the titles and cleaned descriptions of every listing of the job, not only the representative.
 
 | **Column** | **Kind**  | **Logic**                                           |
 |------------|-----------|-----------------------------------------------------|
@@ -362,7 +362,7 @@ A rule by source would leave the 25 cross-publisher groups unmerged; the publish
 
 ### 8.3 Blocking
 
-Candidates are compared only inside a block of the same company_norm and the same city_std. Comparing all 13,777 listings pairwise would mean about 95 million pairs. A listing with no company, no city (region or country level only), or no title key is never matched and stays a job of its own.
+Candidates are compared only inside a block of the same company_norm and the same city_std. Comparing all 20,490 listings pairwise would mean about 210 million pairs. A listing with no company, no city (region or country level only), or no title key is never matched and stays a job of its own.
 
 ### 8.4 Matching tiers
 
@@ -374,7 +374,7 @@ Candidates are compared only inside a block of the same company_norm and the sam
 
 A best match is one to one, so groups are joined in pairs and a chain of matches cannot form. Together with the no-shared-publisher condition, two postings of one publisher never end in one job by construction; a test checks it as well.
 
-The fuzzy tier is off while fuzzy_match_threshold is null, so on 2026-09-27 every merge is exact. The score and its threshold are chosen from labelled pairs (section 8.7). A test build showed why labels are needed: Jaro-Winkler scored different Qiddiya jobs that share the prefix "Assistant Manager -" at 86 to 93 ("Assets Infrastructure Delivery" and "Asset Infrastructure Design": 93), while their Jaccard score stayed at 43 or below.
+The fuzzy tier is off while fuzzy_match_threshold is null, so on 2026-09-28 every merge is exact. The score and its threshold are chosen from labelled pairs (section 8.7). A test build showed why labels are needed: Jaro-Winkler scored different Qiddiya jobs that share the prefix "Assistant Manager -" at 86 to 93 ("Assets Infrastructure Delivery" and "Asset Infrastructure Design": 93), while their Jaccard score stayed at 43 or below.
 
 ### 8.5 Job key
 
@@ -409,7 +409,7 @@ One listing represents the job, chosen by source_priority, then first seen, then
 
 The listing that stands for each group in a review is chosen with a unique tie-break, so listing_a and listing_b are the same on every build and the labels keep joining. Verified on 2026-09-27: two builds of int_match_candidates gave identical fingerprints.
 
-**Result on 2026-09-27:** 13,777 listings; 12,594 single-listing jobs; 570 jobs merged by the exact tier from 1,183 listings; 8,826 fuzzy candidate pairs waiting for the labelled sample.
+**Result on 2026-09-28:** 20,490 listings; 18,142 single-listing jobs; 1,121 jobs merged by the exact tier from 2,348 listings; 28,374 fuzzy candidate pairs waiting for the labelled sample.
 
 ## 9. Tests
 
@@ -430,7 +430,7 @@ Every rule in this model has a dbt test, so a run that breaks a rule fails inste
 | Location and salary (custom)              | A text naming several cities gets no city; salary amounts are positive, the minimum is not above the maximum, and a monthly SAR value exists exactly when the period converts                                                                             |
 | RAW to staging (custom)                   | RAW reconciles with staging; the latest pull of each ATS source holds at least half the postings of the one before, so a collapsed pull fails the build                                                                                                   |
 
-**Results on 2026-09-27.** Full build: 274 passed, 1 warning, 0 errors. The warning is one Jooble listing titled "(Accountant)": removing bracketed notes empties its title key, so it stays a job of its own (section 12). Idempotency: two builds on the same data gave identical hash_agg fingerprints for every intermediate table and fct_jobs.
+**Results of the final build (2026-09-28).** 10 seeds, 25 models and 288 data tests: 322 passed, 1 warning, 0 errors. The warning is one Jooble listing titled "(Accountant)": removing bracketed notes empties its title key, so it stays a job of its own (section 12). Idempotency (verified 2026-09-27): two builds on the same data gave identical hash_agg fingerprints for every intermediate table and fct_jobs.
 
 ## 10. Data quality report
 
@@ -449,23 +449,29 @@ The reliability questions become this report. It is produced on every build by t
 | DQ9    | Skill coverage among jobs with a full description                                                       | intermediate_checks                             |
 | DQ10   | Company spellings not yet in the alias seed                                                             | companies_not_in_seed                           |
 
-### 10.1 Results of the build of 2026-09-27
+### 10.1 Results of the final build (2026-09-28)
 
-| **Check**                                                | **Value**             | **Expected**                             |
-|----------------------------------------------------------|-----------------------|------------------------------------------|
-| Listings = sum of the six staging models                 | 13,777                | 13,777                                   |
-| Jobs: single / exact / fuzzy                             | 12,594 / 570 / 0      | fuzzy 0 while the threshold is null      |
-| Fuzzy candidate pairs                                    | 8,826                 | Input to the labelled sample             |
-| Listings at city / region / country level                | 13,331 / 185 / 261    | City for most                            |
-| Listings naming several cities                           | 5                     | A handful                                |
-| Jobs by experience level basis: source / title / unknown | 1,791 / 3,457 / 7,916 | Title adds coverage                      |
-| Salary texts / parsed                                    | 283 / 283             | Equal                                    |
-| Jobs by lifecycle: open / disappeared / unknown          | 2,596 / 141 / 10,427  | unknown = aggregator-only                |
-| Baseline jobs / not in baseline                          | 12,241 / 923          | Not in baseline only after a second pull |
-| New openings (employer-board jobs with an opening date)  | 150                   | Aggregator-only jobs never counted       |
-| ATS listings inactive in staging but not disappeared     | 0                     | 0 with K = 1 and no failed pull          |
-| Pulls that failed                                        | 0                     | Each one explained                       |
-| Jobs with a skill, among jobs with a full description    | 3,710 of 4,749        | Coverage for Q9                          |
+| **Check**                                                | **Value**                | **Expected**                             |
+|----------------------------------------------------------|--------------------------|------------------------------------------|
+| Listings = sum of the six staging models                 | 20,490                   | 20,490                                   |
+| Jobs: single / exact / fuzzy                             | 18,142 / 1,121 / 0       | fuzzy 0 while the threshold is null      |
+| Job postings (dim_job_posting, without Unknown)          | 18,808                   | Fewer than jobs (Workable multi-city)    |
+| Jobs on 1 / 2 / 3 sources                                | 18,352 / 877 / 34        | Cross-source overlap is a lower bound    |
+| Fuzzy candidate pairs                                    | 28,374                   | Input to the labelled sample             |
+| Listings at city / region / country level                | 19,734 / 328 / 428       | City for most                            |
+| Listings naming several cities                           | 5                        | A handful                                |
+| Jobs by experience level basis: source / title / unknown | 1,804 / 5,739 / 11,720   | Title adds coverage                      |
+| Salary texts / parsed                                    | 371 / 371                | Equal                                    |
+| Jobs by lifecycle: open / disappeared / unknown          | 2,584 / 177 / 16,502     | unknown = aggregator-only                |
+| Baseline jobs / not in baseline                          | 12,242 / 7,021           | Not in baseline only after a second pull |
+| New openings (employer-board jobs with an opening date)  | 174                      | Aggregator-only jobs never counted       |
+| ATS listings inactive in staging but not disappeared     | 0                        | 0 with K = 1 and no failed pull          |
+| ATS board pulls that failed                              | 0                        | Each one explained                       |
+| Jobs with a skill, among jobs with a full description    | 5,562 of 7,443           | Coverage for Q9                          |
+| bridge_job_skill rows = int_job_skills rows              | 22,898 = 22,898          | Equal                                    |
+| Layer reconciliation (analyses/model_checks, 19 checks)  | All OK                   | All OK                                   |
+
+Row counts of the ten exported tables are listed in final_datasets/README.md.
 
 ### 10.2 Collection coverage by week
 
@@ -474,8 +480,9 @@ The reliability questions become this report. It is produced on every build by t
 | 2026-09-06        | 3 of 3           | jooble, jsearch, greenhouse                                                                                        |
 | 2026-09-13        | 3 of 3           | smartrecruiters, workable, ashby                                                                                   |
 | 2026-09-20        | 4 of 6           | smartrecruiters, ashby, greenhouse, workable; the aggregators were pulled but did not repeat the baseline campaign |
+| 2026-09-27        | 6 of 6           | all six: every baseline query of Jooble and JSearch was repeated on 27–28 September, and every ATS board was pulled |
 
-No week yet has all six sources fully pulled, so a change between two weeks can be a change in collection rather than in the market. For the ATS boards, the first pull of each board and the week of 2026-09-20 are comparable.
+The week of 2026-09-27 is the first with all six sources fully pulled. It was collected on 27–28 September, so its weekly counts (Q7, Q8) cover two days, not a full week.
 
 ### 10.3 Field completeness baseline, measured 2026-09-24
 
@@ -490,7 +497,19 @@ No week yet has all six sources fully pulled, so a change between two weeks can 
 
 ### 10.4 Pipeline audit: RAW to staging
 
-analyses/pipeline_audit reports, per source, the RAW rows, the staging rows, and the rows removed with the reason (copies across snapshots, umbrella boards, overlapping queries and date windows, failed pages, non-Saudi postings). The test assert_raw_reconciles_with_staging passes on the build of 2026-09-27; the per-source figures are TBD until the audit is run on the final build.
+analyses/pipeline_audit, final build of 2026-09-28. The test assert_raw_reconciles_with_staging passes.
+
+| **Source**      | **Landed files** | **Failed pages** | **RAW rows** | **Out of scope** | **Within-source duplicates** | **Staged listings** |
+|-----------------|-----------------:|-----------------:|-------------:|-----------------:|-----------------------------:|--------------------:|
+| Jooble          | 1,753            | 0                | 32,297       | 0                | 19,469                       | 12,828              |
+| JSearch         | 993              | 101              | 7,624        | 0                | 2,731                        | 4,893               |
+| Workable        | 55               | –                | 7,378        | 0                | 5,829                        | 1,549               |
+| SmartRecruiters | 70               | –                | 4,544        | 0                | 3,592                        | 952                 |
+| Greenhouse      | 85               | –                | 867          | 24               | 624                          | 219                 |
+| Ashby           | 51               | –                | 227          | 5                | 173                          | 49                  |
+| **Total**       | **3,007**        | **101**          | **52,937**   | **29**           | **32,418**                   | **20,490**          |
+
+Within-source duplicates are the same posting landed more than once: in every ATS snapshot while it stays open, and in overlapping aggregator queries and date windows. Out of scope are non-Saudi postings (24 in the unfiltered Greenhouse files of 2026-09-09; 5 Ashby postings matched by a keyword such as "hail" in "Thailand"). JSearch's 101 failed pages are pages that returned HTTP 429, 403 or 504 when a key's quota ran out or the gateway timed out; they are landed on purpose, carry no rows, and were re-requested under a new batch.
 
 ## 11. Build status
 
@@ -504,23 +523,25 @@ analyses/pipeline_audit reports, per source, the RAW rows, the staging rows, and
 
 ## 12. Known limitations
 
-Each limitation is stated with its measured size, so a user outside the team knows where the dataset is thin. Figures are from the build of 2026-09-27 unless another date is given.
+Each limitation is stated with its measured size, so a user outside the team knows where the dataset is thin. Figures are from the final build of 2026-09-28 unless another date is given.
 
 | **Limitation**                               | **Size**                                                                                                                                        | **Effect**                                                                                                |
 |----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| No week with every source fully pulled       | Aggregators fully pulled only in the week of 2026-09-06; ATS boards in the weeks of 2026-09-13 and 2026-09-20                                   | A change between weeks can be a change in collection; weekly answers are read against section 10.2        |
-| Lifecycle known for employer-board jobs only | 2,737 of 13,164 jobs (20.8%); 10,427 aggregator-only jobs are unknown                                                                           | Q7 and Q8 describe employer-board jobs                                                                    |
-| Few new openings so far                      | 150, all from employer boards; 773 aggregator-only jobs outside the baseline are not counted                                                    | Q7 gains one point per pull after the baseline                                                            |
+| One week with every source fully pulled       | Only the week of 2026-09-27, collected on 27–28 September; earlier weeks miss one to three sources | Week-to-week changes before 2026-09-27 can be changes in collection; weekly answers are read against section 10.2 |
+| Lifecycle known for employer-board jobs only | 2,761 of 19,263 jobs (14.3%); 16,502 aggregator-only jobs are unknown | Q7 and Q8 describe employer-board jobs |
+| Few new openings                             | 174, all from employer boards; 6,847 aggregator-only jobs outside the baseline are not counted | Q7 has two weekly points, the second covering two days |
 | Closed and removed postings look the same    | All sources                                                                                                                                     | Only disappearance is observed; the disappeared date is an upper bound (a pull, not the real closing day) |
 | Old postings on ATS boards                   | Posting dates back to 2018-07-11                                                                                                                | The posting date does not define new openings; Q8 uses the median                                         |
-| Undisclosed employers and agencies           | Private Company alone was 13.4% of listings on 2026-09-24; 195 aliases flag recruitment agencies                                                | Never matched across sources when undisclosed; both excluded from employer questions                      |
-| Location less precise than city              | 185 region-level and 261 country-level listings                                                                                                 | Not matched with city-level listings; country-level rows are absent from region rankings                  |
-| Workable multi-city postings                 | 13,164 jobs from 12,713 postings                                                                                                                | A flexible opening advertised in several cities counts once per city                                      |
-| Sparse attributes                            | Experience level known for 39.9% of jobs (13.6% from the source alone); on 2026-09-24 employment type 30.4% and workplace type 7.9% of listings | Attribute questions describe the covered subset; coverage is shown with each answer                       |
+| Undisclosed employers and agencies           | 13.5% of jobs have no disclosed employer; Private Company alone was 13.4% of listings on 2026-09-24; 195 aliases flag recruitment agencies                                                | Never matched across sources when undisclosed; both excluded from employer questions                      |
+| Company spellings not yet in the alias seed  | Example: AtkinsRéalis (291 jobs) and Atkins Realis Group (3 jobs) are two companies | Employer counts can be split across spellings; the effect is small (3 jobs here, no change in the Q3 ranking). analyses/companies_not_in_seed lists candidates for seed_company_aliases |
+| Location less precise than city              | 328 region-level and 428 country-level listings | Not matched with city-level listings; country-level rows are absent from region rankings |
+| Workable multi-city postings                 | 19,263 jobs from 18,808 postings | A flexible opening advertised in several cities counts once per city |
+| Sparse attributes                            | Experience level known for 39.2% of jobs (9.4% from the source alone); employment type known for 35.1% of jobs; on 2026-09-24 workplace type 7.9% of listings | Attribute questions describe the covered subset; coverage is shown with each answer |
 | Title rules for experience level             | Agree with the source field 78% of the time                                                                                                     | Title-based levels carry basis = title, so they can be filtered out                                       |
+| Experience level mostly read from titles      | Mid-Senior is the top level in every region; 2,948 of Riyadh's 3,450 Mid-Senior jobs come from title rules | Q6 is read with experience_level_basis; filtering to basis = source leaves 1,804 jobs |
 | Short Jooble descriptions                    | Median 279 characters, against 1,337 to 4,500 elsewhere                                                                                         | Skill shares use jobs with a full description only                                                        |
-| Salary                                       | 283 listings (2.1%); hourly and daily amounts not converted                                                                                     | Stored where present; no salary question                                                                  |
-| Fuzzy tier off                               | 8,826 candidate pairs not yet labelled                                                                                                          | The same job with differently worded titles stays two jobs; the unique job count is an upper bound        |
+| Salary                                       | 371 listings (1.8%); hourly and daily amounts not converted | Stored where present; no salary question |
+| Fuzzy tier off                               | 28,374 candidate pairs not yet labelled | The same job with differently worded titles stays two jobs; the unique job count is an upper bound |
 | Title entirely in brackets                   | 1 listing, "(Accountant)"                                                                                                                       | Its title key is empty, so it is not matched                                                              |
 
 ## 13. Open decisions (TBD)
@@ -543,9 +564,9 @@ Basis: \[GUIDE\] required by the project guide; \[WCD\] the WeCloudData capstone
 | **\#** | **Decision**                                                                                                                        | **Reason**                                                                                      | **Basis**          |
 |--------|-----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|--------------------|
 | C1     | Star schema with one fact table, fct_jobs; weeks come from date roles, not from a weekly table                                | Every question is a plain join from fct_jobs to one dimension; event weeks come from date roles | \[TEAM\]           |
-| C2     | Q1 to Q6 and Q9 over the observation period; Q7 and Q8 by week                                                                    | No week yet has every source fully pulled (section 10.2)                                        | \[DATA\]           |
-| C3     | Q4 to Q6 and Q9 describe open jobs, not new openings                                                                              | New openings are 150 employer-board jobs so far, too few to describe composition                | \[DATA\]           |
-| C4     | New openings only for jobs with an employer-board listing                                                                         | 773 of the 923 jobs outside the baseline were aggregator-only                                   | \[DATA\]           |
+| C2     | Q1 to Q6 and Q9 over the observation period; Q7 and Q8 by week                                                                    | Only one week has every source fully pulled (section 10.2)                                        | \[DATA\]           |
+| C3     | Q4 to Q6 and Q9 describe open jobs, not new openings                                                                              | New openings are 174 employer-board jobs, too few to describe composition                | \[DATA\]           |
+| C4     | New openings only for jobs with an employer-board listing                                                                         | 6,847 of the 7,021 jobs outside the baseline were aggregator-only                                   | \[DATA\]           |
 | C5     | lifecycle_status is open, disappeared, or unknown; aggregator-only jobs are unknown                                               | A listing missing from a query result proves nothing                                            | \[PRACTICE\]       |
 | C6     | Pull success read from RAW file metadata: a job-list payload                                                                      | Staging keeps no trace of a failed pull                                                         | \[PRACTICE\]       |
 | C7     | Disappearance needs staging's inactive flag and K successful pulls of the listing's own board                                     | A failed or skipped pull would otherwise close a whole board                                    | \[PRACTICE\]       |
@@ -559,7 +580,7 @@ Basis: \[GUIDE\] required by the project guide; \[WCD\] the WeCloudData capstone
 | C15    | dim_job_posting at posting grain, one to many with fct_jobs                                                                       | A Workable posting in several cities is one posting and one job per city                        | \[DATA\]           |
 | C16    | Proposed role families for dim_role                                                                                               | Job titles must be normalised into role families                                                | \[GUIDE\]          |
 | C17    | Skill dictionary decided: 133 keywords, 125 skills, 12 groups                                                                     | Terms found in at least 10 of 4,304 full descriptions                                           | \[GUIDE\] \[DATA\] |
-| C18    | Salary periods week and day added; week converted, day not                                                                        | All 283 salary texts follow one grammar                                                         | \[DATA\]           |
+| C18    | Salary periods week and day added; week converted, day not                                                                        | All 371 salary texts follow one grammar                                                         | \[DATA\]           |
 | C19    | No listing bridge in the marts; listing provenance stays in int_jobs_matched, and fct_jobs keeps primary_source_sk and listing counts | One row per listing already exists in the intermediate layer                                    | \[PRACTICE\]       |
 | C20    | Quality results produced by tests and analyses on every build, not stored in quality marts                                      | The checks read the built layers directly                                                       | \[PRACTICE\]       |
 | C21    | dim_date covers every date role up to the latest successful pull                                                                  | open_until_date can fall after the last sighting                                                | \[PRACTICE\]       |

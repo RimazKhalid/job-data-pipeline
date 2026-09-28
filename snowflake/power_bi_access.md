@@ -49,7 +49,7 @@ Run with the primary role alone, the check gave the expected result:
 ```sql
 use role job_pipeline_reporter;
 use secondary roles none;
-select count(*) from job_pipeline_db.marts.fct_jobs;          -- works: 13,163
+select count(*) from job_pipeline_db.marts.fct_jobs;          -- works: 19,263
 select count(*) from job_pipeline_db.staging.stg_ashby_jobs;  -- fails: does not exist or not authorized
 ```
 
@@ -72,7 +72,7 @@ that also holds `JOB_PIPELINE_DEV` or `ACCOUNTADMIN`.
 | Warehouse | The warehouse granted to the reporter |
 | Advanced → Role | `JOB_PIPELINE_REPORTER` |
 | Navigator | `JOB_PIPELINE_DB` → `MARTS` → the ten tables (fact, eight dimensions, bridge) |
-| Mode | **Import**: the star is small (13,164 fact rows on 27 September), and a refresh after each pipeline run is enough |
+| Mode | **Import**: the star is small (19,263 fact rows in the final build of 28 September), and a refresh after each pipeline run is enough |
 | Credentials | Entered in Power BI's credential store, never written into the `.pbix` or the repo |
 
 Relationships in the model follow the star (data_model.md, section 7.4): each dimension one-to-many

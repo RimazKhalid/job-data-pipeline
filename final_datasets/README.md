@@ -7,27 +7,30 @@ Parquet, `stjobdata26/curated/<table>/export_date=<date>/`.
 
 | | |
 |---|---|
-| **Generated** | RUN_DATE, from the pipeline run `RUN_ID` |
+| **Generated** | 2026-09-28, from the pipeline run `20260928T113426Z` (final build: 322 checks passed, 1 warning, 0 errors) |
 | **Observation window** | September 2026: employer boards collected several times between 9 and 28 September; aggregators collected as a query campaign on 9–12 September and repeated on 27–28 September |
 | **Sources** | Ashby, Greenhouse, SmartRecruiters, Workable (employer job boards); Jooble, JSearch (aggregators) |
 | **Model** | `dbt/data_modeling/data_model.md`; diagram `dbt/data_modeling/schema_diagram.png` |
 
 ## Files
 
-| File | Grain |
-|---|---|
-| `fct_jobs.csv` | One job: one job advertisement in one Saudi location, after merging its listings across sources |
-| `dim_job_posting.csv` | One job posting (+ Unknown). A Workable posting open in several cities is one posting and one job per city |
-| `dim_company.csv` | One employer after entity resolution (+ the Unknown member, `Employer not disclosed`) |
-| `dim_location.csv` | One location at city, region or country level (+ Unknown) |
-| `dim_role.csv` | One job category with its role family (+ Unknown) |
-| `dim_job_attributes.csv` | One observed combination of employment type, workplace type, remote status, experience level and its basis (+ Unknown) |
-| `dim_date.csv` | One day, from the oldest posting date to the latest collection (+ Unknown `-1`) |
-| `dim_source.csv` | One source (6 + Unknown) |
-| `dim_skill.csv` | One canonical skill (+ Unknown) |
-| `bridge_job_skill.csv` | One job per skill mentioned in its titles or descriptions |
+| File | Rows | Grain |
+|---|---:|---|
+| `fct_jobs.csv` | 19,263 | One job: one job advertisement in one Saudi location, after merging its listings across sources |
+| `dim_job_posting.csv` | 18,809 | One job posting (18,808 + Unknown). A Workable posting open in several cities is one posting and one job per city |
+| `dim_company.csv` | 3,005 | One employer after entity resolution (+ the Unknown member, `Employer not disclosed`) |
+| `dim_location.csv` | 57 | One location at city, region or country level (+ Unknown) |
+| `dim_role.csv` | 20 | One job category with its role family (+ Unknown) |
+| `dim_job_attributes.csv` | 83 | One observed combination of employment type, workplace type, remote status, experience level and its basis (+ Unknown) |
+| `dim_date.csv` | 3,003 | One day, from the oldest posting date to the latest collection (+ Unknown `-1`) |
+| `dim_source.csv` | 7 | One source (6 + Unknown) |
+| `dim_skill.csv` | 126 | One canonical skill (+ Unknown) |
+| `bridge_job_skill.csv` | 22,898 | One job per skill mentioned in its titles or descriptions |
 
-Row counts of this export are in `dbt/data_modeling/data_model.md`, section 10.1.
+Totals: 20,490 listings → 19,263 jobs → 18,808 job postings. 911 jobs (4.7%) were found on more than
+one source. Lifecycle: 2,584 open and 177 disappeared (employer-board evidence); 16,502 jobs found
+on aggregators only are `unknown`. 174 jobs are new openings (employer-board jobs not seen in any
+baseline pull).
 
 ## Columns
 
@@ -83,8 +86,4 @@ For each table, in a Snowflake worksheet: `select * from job_pipeline_db.marts.<
 **Download results → CSV**. Row counts were checked against `show tables in schema
 job_pipeline_db.marts` after the final build.
 
-## Known limitations
 
-See `dbt/data_modeling/data_model.md`, section 12. In short: cross-source overlap is a lower
-bound (exact matching only); experience level is sparse and partly read from titles; Jooble has no
-posting date and a snippet description; aggregator-only jobs have `lifecycle_status = 'unknown'`.

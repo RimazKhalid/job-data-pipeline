@@ -8,8 +8,8 @@ selected sources turned out to contain once collected.
 |---|---|
 | **Candidates evaluated** | 17: 8 with a usable API, 9 excluded for legal or access reasons |
 | **Selected and collected** | 6: four ATS job boards (Ashby, Greenhouse, SmartRecruiters, Workable) and two aggregators (Jooble, JSearch) |
-| **Investigation dates** | 31 August – 2 September 2026 (probes), updated with collection results on 26 September 2026 |
-| **Collected listings** | 13,777 unique listings after within-source deduplication (26 September build) |
+| **Investigation dates** | 31 August – 2 September 2026 (probes), updated with collection results on 28 September 2026 |
+| **Collected listings** | 20,490 unique listings after within-source deduplication (final build, 28 September) |
 
 Related files:
 
@@ -95,17 +95,18 @@ The six sources fall into two families, and the difference drives most of the pi
 
 | Source | Collection scope | Collection dates (UTC) | Unique listings |
 |---|---|---|---|
-| Ashby | 10 company boards, filtered to Saudi locations in the script | 16, 24 and 25 Sep 2026 | 49 |
-| Greenhouse | 17 company boards, filtered to Saudi locations in the script (and in staging for the first collection) | 9, 24 and 25 Sep 2026 | 217 |
-| SmartRecruiters | 14 companies, Saudi postings through the API's `country=sa` filter | 19, 24 and 25 Sep 2026 | 944 |
-| Workable | 11 company accounts, filtered to Saudi Arabia in the script | 16, 24 and 25 Sep 2026 | 1,535 |
-| Jooble | Campaign: 23 locations, then 24 job-title keywords within Riyadh. Re-run: the general query only | Campaign 9–10 Sep; re-run 26 Sep 2026 | 8,928 |
-| JSearch | Campaign: `date_posted` windows (today / 3 days / week / month), up to 20 pages each. Re-run: the general query only | Campaign 10–12 Sep; re-run 26 Sep 2026 | 2,104 |
-| **Total** | | | **13,777** |
+| Ashby | 10 company boards, filtered to Saudi locations in the script | 16, 24, 25, 27 and 28 Sep 2026 | 49 |
+| Greenhouse | 17 company boards, filtered to Saudi locations in the script (and in staging for the first collection) | 9, 24, 25, 27 and 28 Sep 2026 | 219 |
+| SmartRecruiters | 14 companies, Saudi postings through the API's `country=sa` filter | 19, 24, 25, 27 and 28 Sep 2026 | 952 |
+| Workable | 11 company accounts, filtered to Saudi Arabia in the script | 16, 24, 25, 27 and 28 Sep 2026 | 1,549 |
+| Jooble | Campaign: 23 locations, then 24 job-title keywords within Riyadh. General query on 26 Sep; campaign repeated in full on 27 Sep | 9–10, 26 and 27 Sep 2026 | 12,828 |
+| JSearch | Campaign: general query, cities, Riyadh keywords, and `date_posted` windows (today / 3 days / week / month), up to 20 pages each. General query on 26 Sep; campaign repeated in full on 27–28 Sep | 10–12, 26, 27 and 28 Sep 2026 | 4,893 |
+| **Total** | | | **20,490** |
 
-The 26 September aggregator re-run repeated only the general query (`L0_general_sa`), not the
-campaign's layers, so it cannot show which campaign listings were taken down. Aggregator listings
-therefore have no lifecycle status: their jobs are `unknown` (`data_model.md`, section 7.1).
+The aggregator campaign was repeated in full on 27–28 September, so that week is the first with all
+six sources fully pulled. Even a repeated search returns a different ranking and subset, so it
+cannot show which listings were taken down. Aggregator listings therefore have no lifecycle status:
+their jobs are `unknown` (`data_model.md`, section 7.1).
 
 ATS boards were found manually (no ATS offers a list of its clients): by web search for each
 platform's job-page pattern, then keeping boards that returned Saudi postings.
@@ -168,5 +169,3 @@ Corrections to the probe results:
   campaign is to be repeated.
 - **Early probes used small samples.** Section 3.2 replaces their field estimates with measured
   values.
-- **Four of the six terms-of-use exclusions** (Indeed, GulfTalent, NaukriGulf, Glassdoor) were not
-  individually re-checked in the final pass.
