@@ -1,6 +1,6 @@
 -- dbt/models/marts/fct_jobs.sql
 --
--- The fact table of the star schema (data model v3, sections 4 and 7.1).
+-- The fact table of the star schema (data_model.md, sections 4 and 7.1).
 -- Grain: one job = one job advertisement in one Saudi location, after the listings of the same
 -- job on several sources have been merged. Accumulating snapshot: one date role per milestone.
 -- Every column comes from int_job_openings, which applies survivorship and lifecycle once.

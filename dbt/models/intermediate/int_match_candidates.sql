@@ -2,7 +2,7 @@
 --
 -- Grain: one row per candidate pair of exact match groups (int_listing_groups) that the fuzzy
 -- tier could merge. It holds every pair that passes the fixed rules, with both similarity scores,
--- and no threshold: the threshold is chosen from these pairs (data model v2, section 8.7).
+-- and no threshold: the threshold is chosen from these pairs (data_model.md, section 8.7).
 --
 -- A pair is a candidate when:
 --   - blocking: both groups have the same company_norm and city_std;

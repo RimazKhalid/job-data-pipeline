@@ -124,7 +124,7 @@ seeds:
           - not_null
   - name: seed_seniority_keywords
     description: >
-      Title words that give a job's level when the source has no level field (data model v2,
+      Title words that give a job's level when the source has no level field (data_model.md, section 6,
       dim_job_attributes). Each rule was measured on the postings whose source gives a level
       (26 September export, 1,510 labelled postings): a word is kept only when those postings
       agree with it at least 70% of the time. labelled_postings and rule_precision record that
@@ -170,7 +170,7 @@ seeds:
 
   - name: seed_skills
     description: >
-      Skill dictionary (data model v2, dim_skill). keyword is matched as a whole word, in
+      Skill dictionary (data_model.md, section 6, dim_skill). keyword is matched as a whole word, in
       normalize_text() form, against job titles and cleaned descriptions; several keywords can
       name one skill_name ("ms office", "microsoft office"). Built from the 26 September export:
       a term is kept when it appears in at least 10 of the 4,304 postings with a full description
@@ -197,10 +197,16 @@ seeds:
 
   - name: seed_match_review
     description: >
-      Manual verdicts on candidate matches (data model v2, section 8.7). One row per reviewed pair
+      Manual verdicts on candidate matches (data_model.md, section 8.7). One row per reviewed pair
       of listings, stored by source_record_sk so a verdict survives rebuilds. Filled from
       analyses/fuzzy_review_sample.sql and analyses/match_review_sample.sql; read by
       analyses/match_threshold_evaluation.sql to choose the fuzzy threshold.
+      Labelled on 2026-09-28 from the stratified sample of the final build: 88 pairs, 19 of them
+      the same job. A pair is the same job when it is the same role at the same rank and
+      specialisation; word order, punctuation, branding and requisition numbers are ignored. A
+      different rank ("Demi Chef de Partie") or specialisation ("IT Security Design") makes two
+      jobs, and a pair that cannot be decided from its titles is labelled false, because a wrong
+      merge removes a real job while a missed one only leaves a duplicate.
     config:
       column_types:
         listing_a: varchar

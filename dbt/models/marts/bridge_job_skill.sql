@@ -1,6 +1,6 @@
 -- dbt/models/marts/bridge_job_skill.sql
 --
--- Grain: one row per job per skill (data model v3, section 7.2), from int_job_skills: a skill
+-- Grain: one row per job per skill (data_model.md, section 7.2), from int_job_skills: a skill
 -- keyword matched as a whole word in the titles and cleaned descriptions of every listing of the
 -- job. matched_in is 'title' when any listing's title names the skill, else 'description'.
 --

@@ -1,7 +1,7 @@
 -- dbt/models/intermediate/int_jobs_matched.sql
 --
 -- Grain: one row per listing, same as int_job_listings, with the job it belongs to.
--- Cross-source matching as specified in the data model v2, section 8:
+-- Cross-source matching as specified in data_model.md, section 8:
 --
 --   Tier 1  exact: int_listing_groups (title_norm + company_norm + city_std, publisher rule,
 --           rank-to-rank pairing).

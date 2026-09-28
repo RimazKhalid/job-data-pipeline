@@ -1,7 +1,7 @@
 -- dbt/models/intermediate/int_listing_groups.sql
 --
 -- Grain: one row per listing, with its exact match group. Tier 1 of cross-source matching
--- (data model v2, section 8.4); int_jobs_matched adds the fuzzy tier and the job keys.
+-- (data_model.md, section 8.4); int_jobs_matched adds the fuzzy tier and the job keys.
 --
 --   1. Match key: title_norm + company_norm + city_std, all three known. A listing missing any
 --      of them is never matched and forms a group of its own.

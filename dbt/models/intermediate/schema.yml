@@ -165,7 +165,7 @@ models:
       Tier 1: exact groups from int_listing_groups. Tier 2: two exact groups are merged when their
       score in int_match_candidates reaches var('fuzzy_match_threshold') and each is the other's
       best candidate; off while the threshold is null. is_representative marks the listing whose
-      values represent the job. Data model v2, section 8.
+      values represent the job. data_model.md, section 8.
     columns:
       - name: source_record_sk
         data_tests:
