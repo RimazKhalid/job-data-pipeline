@@ -1,6 +1,6 @@
 -- dbt/models/marts/dim_job_attributes.sql
 --
--- Junk dimension (data model v3, section 6): five short, low-cardinality attributes of a job,
+-- Junk dimension (data_model.md, section 6): five short, low-cardinality attributes of a job,
 -- one row per observed combination. The combination in which all four attributes are Unknown
 -- (and so experience_level_basis is 'unknown') is the Unknown member ('-1').
 -- job_category is in dim_role, with its role family.

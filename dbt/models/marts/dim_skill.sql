@@ -1,6 +1,6 @@
 -- dbt/models/marts/dim_skill.sql
 --
--- Which skills (data model v3, section 6). One row per canonical skill of seed_skills (several
+-- Which skills (data_model.md, section 6). One row per canonical skill of seed_skills (several
 -- keywords can name one skill), plus the Unknown member ('-1'). Reached from fct_jobs through
 -- bridge_job_skill.
 

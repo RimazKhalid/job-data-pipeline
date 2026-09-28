@@ -1,6 +1,6 @@
 -- dbt/models/marts/dim_date.sql
 --
--- One row per day, plus the Unknown member (-1) (data model v3, section 6). Role-playing
+-- One row per day, plus the Unknown member (-1) (data_model.md, section 6). Role-playing
 -- dimension: fct_jobs joins it in six roles (posted, first seen, last seen, opening, open until,
 -- disappeared). The range runs from the earliest date of any role (usually an old posting date)
 -- to the latest of any role or the latest successful pull, so every role has a row.

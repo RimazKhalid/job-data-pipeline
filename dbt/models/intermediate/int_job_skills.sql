@@ -1,6 +1,6 @@
 -- dbt/models/intermediate/int_job_skills.sql
 --
--- Grain: one row per job per skill (data model v2, bridge_job_skill and dim_skill).
+-- Grain: one row per job per skill (data_model.md, sections 6 and 7.2).
 --
 -- Skills come from seed_skills, matched as whole words against the normalized title and the
 -- cleaned description of every listing of the job, not only the representative one: a job's

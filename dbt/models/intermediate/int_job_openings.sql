@@ -1,7 +1,7 @@
 -- dbt/models/intermediate/int_job_openings.sql
 --
 -- Grain: one row per job (job_sk): one job advertisement in one Saudi location, after matching.
--- Applies the survivorship rules of the data model v2, section 8.6, once, so every mart reads
+-- Applies the survivorship rules of data_model.md, section 8.6, once, so every mart reads
 -- the same values, and the lifecycle of section 7.1.
 --
 --   From the representative listing   posting_sk, source, company, location, job_category,
@@ -33,8 +33,9 @@
 --                      earlier campaign may simply not have been returned (the same reason its
 --                      disappearance proves nothing).
 --
--- is_active and status_basis keep the rule of data model v2.1 for the marts built on it:
--- employer-board evidence only, null for aggregator-only jobs.
+-- status_basis: 'employer board' when the job has an ATS listing, else 'aggregator query'.
+-- is_active is computed from employer-board evidence only (null for aggregator-only jobs) and is
+-- not passed on to the marts: lifecycle_status carries that rule.
 --
 -- "Priority" = source_priority from seed_sources, then first seen, then source_record_sk.
 
@@ -105,13 +106,13 @@ aggregated as (
         -- aggregator copy can outlive the employer's own posting (20 jobs on 2026-09-28)
         max(iff(source_type = 'ATS', last_seen_date, null))                       as ats_last_seen_date,
 
-        -- employer-board evidence only (data model v2.1 rule, kept for the current marts).
+        -- employer-board evidence only
         -- boolor_agg ignores nulls and returns null when every value is null
         boolor_agg(iff(source_type = 'ATS', is_active, null))                     as is_active,
         iff(count_if(source_type = 'ATS') > 0, 'employer board', 'aggregator query')
                                                                                   as status_basis,
 
-        -- lifecycle inputs (data model v2)
+        -- lifecycle inputs (data_model.md, section 7.1)
         boolor_agg(is_baseline)                                                   as is_baseline,
         count_if(source_type = 'ATS')                                             as ats_listings,
         count_if(source_type = 'ATS' and is_disappeared)                          as ats_listings_disappeared,
@@ -193,7 +194,7 @@ select
     a.is_active,
     a.status_basis,
 
-    -- lifecycle (data model v2, section 7.1)
+    -- lifecycle (data_model.md, section 7.1)
     a.first_seen_date,
     a.last_seen_date,
     a.ats_last_seen_date,

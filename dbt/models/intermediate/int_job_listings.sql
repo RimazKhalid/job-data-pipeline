@@ -3,7 +3,7 @@
 -- Grain: one row per listing (one posting on one source; for Workable, one posting in one city).
 -- Same grain as the six staging models combined. Input to int_listing_groups and int_jobs_matched.
 --
--- Steps (data model v2, sections 6, 7.1 and 8.2):
+-- Steps (data_model.md, sections 6, 7.1 and 8.2):
 --   1. unioned        the six staging models on one shared column list. Each source's own
 --                     columns are mapped by hand (Greenhouse brand, Workable telecommuting and
 --                     experience, SmartRecruiters experience_level, JSearch publisher and
@@ -203,7 +203,7 @@ standardized as (
 
         {{ strip_html('u.description_plain') }}                                      as description_text,
         -- Jooble returns a short snippet, every other source the full text; skill shares use
-        -- full descriptions only (data model v2, Q9)
+        -- full descriptions only (data_model.md, Q9)
         iff(u.source_name = 'jooble', 'snippet', 'full')                             as description_basis,
         u.job_url,
         u.apply_url,
@@ -452,7 +452,7 @@ select
     'SA'                                                                             as country_std,
     e.cities_named,
 
-    -- lifecycle evidence (data model v2, section 7.1)
+    -- lifecycle evidence (data_model.md, section 7.1)
     base.pull_date is not null                                                       as is_baseline,
     bc.latest_successful_pull                                                        as board_latest_successful_pull,
     iff(e.source_type = 'ATS', coalesce(mp.board_pulls_missed, 0), null)             as board_pulls_missed,
