@@ -79,26 +79,30 @@ order by job_openings desc;
 
 
 -- Q6. Which experience levels are most requested in each region during the observation period?
--- Regions with fewer than 20 jobs of known level are left out: the top level would rest on a
--- handful of jobs. experience_level_basis shows how many levels come from title rules.
+-- Only levels stated by the source are counted (experience_level_basis = 'source'). The title
+-- rules can return Internship, Mid-Senior or Director only (seed_seniority_keywords), never Entry
+-- or Associate, so mixing them in would push every region toward Mid-Senior. Stated levels come
+-- from the Workable and SmartRecruiters boards, so the answer describes the employers on those
+-- boards, not the whole market. Regions with fewer than 20 such jobs are left out.
 with counted as (
     select l.region,
            a.experience_level,
-           sum(f.job_count)                                                     as job_openings,
-           sum(iff(a.experience_level_basis = 'title', f.job_count, 0))         as from_title
+           sum(f.job_count)                                                     as job_openings
     from fct_jobs f
     join dim_location l       on f.location_sk = l.location_sk
     join dim_job_attributes a on f.job_attributes_sk = a.job_attributes_sk
     where l.region <> 'Unknown'
-      and a.experience_level <> 'Unknown'
+      and a.experience_level_basis = 'source'
     group by l.region, a.experience_level
 )
-select region, experience_level, job_openings, from_title,
-       sum(job_openings) over (partition by region)                             as jobs_with_known_level
+select region,
+       experience_level,
+       job_openings,
+       round(100 * job_openings / sum(job_openings) over (partition by region), 1) as pct_of_region,
+       sum(job_openings) over (partition by region)                             as jobs_with_stated_level
 from counted
-qualify rank() over (partition by region order by job_openings desc) = 1
-    and sum(job_openings) over (partition by region) >= 20
-order by jobs_with_known_level desc;
+qualify sum(job_openings) over (partition by region) >= 20
+order by jobs_with_stated_level desc, job_openings desc;
 
 
 -- Q7. How many new job openings appeared in each week?
