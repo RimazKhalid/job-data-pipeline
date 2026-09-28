@@ -6,10 +6,14 @@
     string. A fuzzy pair is accepted only when both titles have the same signature, because the
     word that separates two roles usually comes last and a similarity score barely sees it:
     Jaro-Winkler scores "data analyst" against "data analyst intern" at 92.
+    demi, ii, iii and iv are ranks and grades found in the labelled pairs and the audit of the fuzzy
+    merges (data_model.md, section 8.7): "Chef de Partie" and "Demi Chef de Partie",
+    "Technician I" and "Technician II", "Project Manager" and "Project Manager III" are two jobs.
 #}
 {% macro level_words() %}
     {{ return(['intern', 'internship', 'trainee', 'apprentice', 'assistant', 'associate', 'junior',
-               'senior', 'lead', 'head', 'principal', 'manager', 'director', 'chief', 'deputy', 'vice']) }}
+               'senior', 'lead', 'head', 'principal', 'manager', 'director', 'chief', 'deputy', 'vice',
+               'demi', 'ii', 'iii', 'iv']) }}
 {% endmacro %}
 
 {% macro level_signature(column) %}

@@ -21,14 +21,15 @@
 {#
     Title key used ONLY for cross-source matching; the display title keeps its original form.
     Removes bracketed notes ("(Saudi National)"), hiring noise and location words that sources
-    append to the same job differently, and expands common abbreviations.
+    append to the same job differently, and expands common abbreviations. A title that is only a
+    bracketed note ("(Accountant)") keeps the words inside the brackets, so it still has a key.
 #}
 {% macro normalize_title(column) %}
     {%- set noise = ['urgent', 'urgently', 'hiring', 'required', 'needed', 'wanted', 'immediate',
                      'saudi national', 'saudi nationals', 'saudis only', 'saudi only',
                      'ksa', 'saudi arabia', 'saudi', 'riyadh', 'jeddah', 'dammam', 'khobar', 'al khobar'] -%}
     {%- set cleaned = "regexp_replace(lower(" ~ column ~ "), '\\\\([^)]*\\\\)|\\\\[[^]]*\\\\]', ' ')" -%}
-    {%- set base = normalize_text(cleaned) -%}
+    {%- set base = "coalesce(" ~ normalize_text(cleaned) ~ ", " ~ normalize_text("lower(" ~ column ~ ")") ~ ")" -%}
     {%- set expanded = "regexp_replace(regexp_replace(regexp_replace(' ' || " ~ base ~ " || ' ', ' sr ', ' senior '), ' jr ', ' junior '), ' mgr ', ' manager ')" -%}
     {{ remove_words(expanded, noise) }}
 {% endmacro %}
