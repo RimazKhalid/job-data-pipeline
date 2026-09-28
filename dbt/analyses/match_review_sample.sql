@@ -1,6 +1,6 @@
 -- dbt/analyses/match_review_sample.sql
 -- 40 cross-source pairs that matching merged into one opening, drawn deterministically, for a manual
--- precision review (data_model.md, Section 8.5). Record the verdicts in dbt/seeds/seed_match_review.csv:
+-- precision review (data_model.md, section 8.7). Record the verdicts in dbt/seeds/seed_match_review.csv:
 --   listing_a,listing_b,is_same_job,reviewer
 select
     a.source_record_sk as listing_a,

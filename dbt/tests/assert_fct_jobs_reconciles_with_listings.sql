@@ -1,5 +1,5 @@
 -- dbt/tests/assert_fct_jobs_reconciles_with_listings.sql
--- The fact must account for every listing (data_model.md, Section 12):
+-- The fact must account for every listing (data_model.md, section 10.1):
 --   1. SUM(listing_count) equals the rows of int_job_listings
 --   2. the six per-source counts add up to listing_count on every row
 --   3. copies_landed >= listing_count on every row (each listing landed at least once)

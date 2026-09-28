@@ -1,7 +1,7 @@
 -- dbt/analyses/match_threshold_evaluation.sql
 --
 -- Chooses the fuzzy tier's function and threshold from the labelled pairs in seed_match_review
--- (data model v2, section 8.7). For every threshold from 50 to 100 in steps of 5, and for each
+-- (data_model.md, section 8.7). For every threshold from 50 to 100 in steps of 5, and for each
 -- score, it reports:
 --   pairs_merged       labelled pairs the tier would merge (score >= threshold)
 --   precision          share of those that are the same job

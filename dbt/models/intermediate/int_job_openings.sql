@@ -101,6 +101,9 @@ aggregated as (
         max(last_seen_at)                                                         as last_seen_at,
         min(first_seen_date)                                                      as first_seen_date,
         max(last_seen_date)                                                       as last_seen_date,
+        -- last sighting on an employer board: disappearance is decided from the boards, and an
+        -- aggregator copy can outlive the employer's own posting (20 jobs on 2026-09-28)
+        max(iff(source_type = 'ATS', last_seen_date, null))                       as ats_last_seen_date,
 
         -- employer-board evidence only (data model v2.1 rule, kept for the current marts).
         -- boolor_agg ignores nulls and returns null when every value is null
@@ -193,6 +196,7 @@ select
     -- lifecycle (data model v2, section 7.1)
     a.first_seen_date,
     a.last_seen_date,
+    a.ats_last_seen_date,
     a.is_baseline,
     iff(a.is_baseline or a.ats_listings = 0, null, a.first_seen_date)              as opening_date,
     a.lifecycle_status,

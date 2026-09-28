@@ -5,8 +5,8 @@
 -- collections: Jooble's single 19-hour campaign spans 2 dates, and JSearch's single campaign
 -- (one general query, then the city / keyword / date-window layers a day later) spans 3.
 -- The ATS boards were each collected twice (2 dates = 2 full snapshots).
--- Pipeline audit, RAW -> staging -> intermediate, one row per source (data_model.md, Section 12.1).
--- Re-run after every collection. The numbers go on the data-quality slide and in data_model.md 12.1.
+-- Pipeline audit, RAW -> staging -> intermediate, one row per source (data_model.md, section 10.4).
+-- Re-run after every collection. The numbers go on the data-quality slide and in data_model.md, section 10.4.
 --
 --   py -m dbt.cli.main compile --select pipeline_audit
 --   then run target/compiled/job_pipeline/analyses/pipeline_audit.sql in a Snowflake worksheet
@@ -19,7 +19,8 @@
 --   out_of_scope_rows         dropped by the Saudi scope filter in staging (ashby, greenhouse)
 --   within_source_duplicates  copies of the same posting removed by staging dedup
 --   staged_listings           rows in staging = listings
---   active / disappeared      is_active in int_job_listings (ATS: board evidence; aggregators: 7-day rule)
+--   active / disappeared      is_active in int_job_listings: ATS listings only (absent from the latest
+--                             pull of their own board = disappeared); aggregators have no status (null)
 
 with raw_files as (
     {% for s in ['ashby', 'workable', 'greenhouse', 'smartrecruiters'] %}

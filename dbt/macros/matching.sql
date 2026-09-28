@@ -1,5 +1,6 @@
+-- dbt/macros/matching.sql
 {#
-    Helpers for cross-source matching (data model v2, section 8.4).
+    Helpers for cross-source matching (data_model.md, section 8.4).
 
     level_signature(title): the level words a normalized title contains, in a fixed order, as one
     string. A fuzzy pair is accepted only when both titles have the same signature, because the

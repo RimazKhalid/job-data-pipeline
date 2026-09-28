@@ -34,17 +34,27 @@ def make_batch_id(label):
 
 
 def fetch_page(key, body):
+    """POST one page. HTTP errors are returned as they are (the caller stops on non-200).
+    Network failures (read timeout, dropped connection) are retried 3 times, 15 s apart,
+    because one timeout used to stop a whole matrix layer (27 Sep: Hail, Riyadh)."""
+    import http.client
     url = "https://sa.jooble.org/api/" + key
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, method="POST",
-        headers={"Content-Type": "application/json; charset=utf-8",
-                 "User-Agent": UA, "Accept": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return r.status, r.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode("utf-8", errors="replace")
+    for attempt in range(1, 4):
+        req = urllib.request.Request(
+            url, data=data, method="POST",
+            headers={"Content-Type": "application/json; charset=utf-8",
+                     "User-Agent": UA, "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.status, r.read().decode("utf-8")
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode("utf-8", errors="replace")
+        except (TimeoutError, ConnectionError, urllib.error.URLError, http.client.HTTPException) as e:
+            if attempt == 3:
+                raise
+            print("      network error (%s), retry %d/3 in 15s" % (type(e).__name__, attempt))
+            time.sleep(15)
 
 
 def land_raw(batch_id, page, body, status, raw_text, ts):

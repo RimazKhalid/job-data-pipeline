@@ -1,6 +1,6 @@
 -- dbt/analyses/intermediate_checks.sql
 --
--- One result set of checks on the built intermediate layer (data model v2). Run after
+-- One result set of checks on the built intermediate layer (data_model.md, section 10). Run after
 -- `dbt build --select intermediate` and paste the result into the quality report.
 -- Each row: check, value, and what it should be.
 

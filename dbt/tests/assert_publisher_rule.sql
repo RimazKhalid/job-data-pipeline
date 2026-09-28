@@ -1,5 +1,5 @@
 -- dbt/tests/assert_publisher_rule.sql
--- Rule 8.1 (data_model.md): two postings from the same publisher are never merged.
+-- Publisher rule (data_model.md, section 8.1): two postings from the same publisher are never merged.
 -- Listings of one posting (the cities of a Workable posting that resolve to the same location)
 -- may share an opening; two different postings of one publisher may not.
 -- Every returned row is an opening that holds two postings of one publisher (= failure).

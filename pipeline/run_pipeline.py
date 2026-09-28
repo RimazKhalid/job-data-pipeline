@@ -123,7 +123,7 @@ def main():
                 failed_step = "load"
         elif step == "freshness":
             # warn_after only prints (exit code 0). error_after (employer boards older than 15 days,
-            # models/sources.yml) exits non-zero and stops the run before build, so is_active is
+            # models/sources.yml) exits non-zero and stops the run before build, so the lifecycle is
             # never recomputed and exported from stale board snapshots.
             if run("source freshness", dbt("source", "freshness"), DBT_DIR, args.dry_run):
                 failed_step = "freshness"

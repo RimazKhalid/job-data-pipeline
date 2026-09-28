@@ -24,7 +24,7 @@ RAW (Snowflake)  →  staging  →  intermediate            →  marts
 | staging | `STAGING` | view | One model per source: rename, cast, flatten, deduplicate within the source, Saudi scope |
 | intermediate | `INTERMEDIATE` | table | Union of the six sources, standardization through seeds, cross-source matching, survivorship |
 | marts | `MARTS` | table | Star schema read by Power BI and exported to ADLS `curated/` |
-| seeds | `SEEDS` | table | Nine lookup tables: cities, job categories, company aliases, experience levels, sources, seniority keywords, skills, currency rates, and match review verdicts. `seed_company_aliases` holds 742 aliases; `analyses/companies_not_in_seed.sql` lists candidate spellings still outside it |
+| seeds | `SEEDS` | table | Ten lookup tables: cities, job categories, role families, company aliases, experience levels, sources, seniority keywords, skills, currency rates, and match review verdicts. `seed_company_aliases` holds 742 aliases; `analyses/companies_not_in_seed.sql` lists candidate spellings still outside it |
 
 The design (grain, keys, matching rules, tests) is in
 [`data_modeling/data_model.md`](data_modeling/data_model.md); the quality policy (what stops a run,
@@ -37,7 +37,7 @@ its own, from this folder:
 
 ```powershell
 py -m dbt.cli.main deps                  # installs dbt_utils
-py -m dbt.cli.main build                 # loads the five seeds, runs every model and every test, in dependency order
+py -m dbt.cli.main build                 # loads the seeds, runs every model and every test, in dependency order
 ```
 
 Useful selections:
@@ -66,8 +66,8 @@ combined in intermediate. Source-specific columns stay in staging.
 
 Staging does not join sources and applies no cross-source business rules. It applies the
 geographic scope (Saudi Arabia) where extraction could let a non-Saudi posting through (Ashby,
-Greenhouse), and the ATS lifecycle (`is_active`), because staging is the last layer that sees every
-landed copy.
+Greenhouse), and flags whether an ATS posting is still on its board (`is_active`), because staging
+is the last layer that sees every landed copy.
 
 ### Shared columns (all six models)
 
@@ -133,16 +133,20 @@ silently disappearing.
    on title, company and city. Specified in
    [`data_modeling/data_model.md`](data_modeling/data_model.md#8-cross-source-matching-specification).
 
-### `is_active`
+### `is_active` (staging, employer boards only)
 
-An ATS file is a full snapshot of a company's open jobs. A posting present in the most recent
-snapshot of its source is active; one that has disappeared was taken down. This is how the
-pipeline detects **outdated records**. A test (`assert_ats_latest_pull_not_collapsed`) stops the
-build if a source's latest pull holds less than half the postings of the one before, so a broken
-pull is never read as "everything closed".
+An ATS file is a full snapshot of a company's open jobs. A posting present in the latest pull of
+its own board has `is_active` = true; one missing from it is false. This is the evidence for the
+job lifecycle: `int_job_listings` marks a listing disappeared once `disappearance_misses`
+successful pulls of its board confirm it, and `int_job_openings` sets `lifecycle_status` (`open`,
+`disappeared`, `unknown`) in `fct_jobs`. A test (`assert_ats_latest_pull_not_collapsed`) stops
+the build if a source's latest pull holds less than half the postings of the one before, so a
+broken pull is never read as "everything closed".
 
 Aggregator listings (Jooble, JSearch) have `is_active` = null: a search result is not a full list
-of open jobs, so a listing missing from a later run proves nothing (`data_model.md`, Section 7.2).
+of open jobs, so a listing missing from a later run proves nothing. Their jobs get
+`lifecycle_status = 'unknown'` (`data_model.md`, section 7.1;
+[`data_modeling/aggregator_status.md`](data_modeling/aggregator_status.md)).
 
 ### Per-model notes
 
@@ -205,8 +209,9 @@ of open jobs, so a listing missing from a later run proves nothing (`data_model.
 
 ## Intermediate layer
 
-Design: data model v2. The rules, parameters and checks of this layer are described in
-[`data_modeling/intermediate_layer.md`](data_modeling/intermediate_layer.md).
+The rules, parameters and checks of this layer are described in
+[`data_modeling/intermediate_layer.md`](data_modeling/intermediate_layer.md) and
+[`data_modeling/data_model.md`](data_modeling/data_model.md).
 
 | Model | Grain | What it does |
 |---|---|---|
@@ -225,7 +230,7 @@ Parameters are dbt vars in `dbt_project.yml` (`fuzzy_match_function`, `fuzzy_mat
 
 ## Marts layer
 
-A star schema (data model v3, `data_modeling/data_model_v3.md`): `fct_jobs` (one job: a job
+A star schema ([`data_modeling/data_model.md`](data_modeling/data_model.md), diagram in `data_modeling/schema_diagram.png`): `fct_jobs` (one job: a job
 advertisement in one Saudi location, after cross-source matching) and eight dimensions:
 `dim_job_posting`, `dim_company`, `dim_location`, `dim_role` (role family and job category),
 `dim_job_attributes`, `dim_date` (role-playing: posted, first seen, last seen, opening, open until,
@@ -235,19 +240,19 @@ Unknown member (`'-1'`). Columns and tests: `models/marts/schema.yml`. Answers t
 
 ## Tests and results
 
-182 data tests, run by `dbt build` (203 nodes with the models and seeds). On the 26 September
-build: 202 pass, 1 warning (one listing whose title normalizes to empty).
+Every model, seed and test runs in `dbt build`. On the build of 2026-09-28: 322 passed,
+1 warning (one listing whose title normalizes to empty), 0 errors.
 
 - **Keys and grain:** `unique` / `not_null` on every key; `posting_sk` + `location_sk` unique in `fct_jobs`.
-- **Vocabularies:** `accepted_values` on employment type, workplace type, remote status, experience level, location level, source type, status basis.
+- **Vocabularies:** `accepted_values` on employment type, workplace type, remote status, experience level, location level, source type, status basis, lifecycle status, match tier.
 - **Referential integrity:** `relationships` on every fact and bridge key, including the six date roles; exactly one Unknown member per dimension (`tests/generic/has_one_unknown_member.sql`).
 - **Reconciliation:** RAW → staging → listings → matched → fact (`tests/assert_*`).
 - **Matching:** one representative listing per opening; never two postings of one publisher in one opening.
-- **Lifecycle:** `lifecycle_status` is unknown exactly for aggregator-only jobs; a disappeared date exactly for disappeared jobs; an opening date only on the first seen date; ATS pulls must not collapse.
+- **Lifecycle:** `lifecycle_status` is unknown exactly for aggregator-only jobs; a disappeared date exactly for disappeared jobs; an opening date only on the first seen date; a disappeared date after the last employer-board sighting; ATS pulls must not collapse.
 
 RAW-to-staging counts and the layer checks are re-created by `analyses/pipeline_audit.sql` and
-`analyses/model_checks.sql`; the recorded numbers are in `data_model.md`, Section 12, and are not
-repeated here.
+`analyses/intermediate_checks.sql` and `analyses/model_checks.sql`; the recorded numbers are in
+`data_model.md`, section 10, and are not repeated here.
 
 ---
 

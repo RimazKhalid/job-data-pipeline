@@ -1,6 +1,6 @@
 -- dbt/analyses/companies_not_in_seed.sql
 --
--- Employer entity resolution, step 2 (data model v2, dim_company): candidate spellings of one
+-- Employer entity resolution, step 2 (data_model.md, dim_company): candidate spellings of one
 -- employer that the alias seed does not merge yet. Two company keys are candidates when they
 -- appear in the same city and one is contained in the other as whole words ("qiddiya" in
 -- "qiddiya investment") or they share most of their words. A person accepts or rejects each

@@ -1,5 +1,5 @@
 -- dbt/tests/assert_raw_reconciles_with_staging.sql
--- RAW -> staging row-count reconciliation (data_model.md, Section 12.1, automated).
+-- RAW -> staging row-count reconciliation (data_model.md, section 10.4, automated).
 --
 --   raw_rows       job objects landed in RAW, counted the same way staging reads them
 --                  (Jooble / JSearch: HTTP 200 pages only, which is the only payload that exists)

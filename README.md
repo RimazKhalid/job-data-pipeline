@@ -143,7 +143,7 @@ passed ([`dbt/DATA_QUALITY.md`](dbt/DATA_QUALITY.md)). Every run is logged with 
 | Extraction | Scripts for all 6 sources, one landing layout; employer boards collected on three dates, aggregators as one campaign plus one general-query re-run |
 | Raw data in ADLS | All 6 sources under `raw/<source>/ingest_date=YYYY-MM-DD/`, never overwritten |
 | Snowflake RAW | 6 VARIANT tables, loaded by `dbt run-operation load_raw` (`COPY INTO`, new files only) |
-| dbt | 16 models (staging → intermediate → marts), 5 seeds, 182 data tests; model in [`data_model.md`](dbt/data_modeling/data_model.md) |
+| dbt | 25 models (6 staging → 9 intermediate → 10 marts), 10 seeds, tests on every layer; model in [`data_model.md`](dbt/data_modeling/data_model.md) |
 | Curated dataset | MARTS exported to ADLS `curated/` as Parquet (`export_marts`) and to [`final_datasets/`](final_datasets/README.md) as CSV |
 | Orchestration | `pipeline/run_pipeline.py` runs every step in order and stops at the first failure. ADF: linked services to ADLS and Snowflake built; scheduled pipeline not built |
 | Power BI | Not in this repo yet. Downstream only: connects to MARTS through the `JOB_PIPELINE_REPORTER` role |

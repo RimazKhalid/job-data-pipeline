@@ -5,7 +5,7 @@
 --
 --   JOB_PIPELINE_DEV       dbt and pipeline/run_pipeline.py: loads RAW, builds STAGING, INTERMEDIATE,
 --                          MARTS and SEEDS, unloads MARTS to the curated stage
---   JOB_PIPELINE_REPORTER  Power BI: reads MARTS and nothing else (data_model.md, Section 9)
+--   JOB_PIPELINE_REPORTER  Power BI: reads MARTS and nothing else (data_model.md, section 7.4)
 
 use role securityadmin;
 

@@ -1,6 +1,6 @@
 -- dbt/analyses/fuzzy_review_sample.sql
 --
--- Pairs to label by hand before the fuzzy tier is switched on (data model v2, section 8.7).
+-- Pairs to label by hand before the fuzzy tier is switched on (data_model.md, section 8.7).
 -- Stratified: up to 10 pairs from every 10-point band of each score, from 50 to 100, so the
 -- sample covers the whole range where a threshold could sit, not only the easy top.
 -- Record each verdict in seeds/seed_match_review.csv:

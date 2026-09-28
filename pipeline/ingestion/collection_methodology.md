@@ -206,8 +206,8 @@ A job missing from a later ATS collection was taken down: the board lists every 
 aggregator, a job missing from a later run shows nothing unless **the same query** was repeated,
 and even then ranking changes between days. The 26 September runs repeated only `L0_general_sa`,
 which returns about 1,000 listings, so most of the campaign's listings were not returned. For this
-reason the model gives aggregator-only openings no status: `is_active` is null
-(`data_model.md`, Section 7.2), and closures are counted from employer boards only.
+reason aggregator-only jobs have `lifecycle_status = 'unknown'` (`data_model.md`, section 7.1),
+and closures are counted from employer boards only.
 
 Repeating the campaign adds listings and freshness, not status. To repeat it, run the matrix
 runners with the same `QUERY_LABEL`s and query bodies, and check before starting:

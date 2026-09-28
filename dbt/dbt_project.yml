@@ -1,3 +1,4 @@
+# dbt/dbt_project.yml
 # Name your project! Project names should contain only lowercase characters
 # and underscores. A good package name should reflect your organization's
 # name or the intended use of these models
@@ -43,7 +44,7 @@ models:
       +materialized: table
       +schema: marts
 
-# Parameters of the intermediate layer (data model v2). A value marked TBD is an open decision
+# Parameters of the intermediate layer (data_model.md; intermediate_layer.md). A value marked TBD is an open decision
 # that is settled from a measurement, never by default. Override one run with
 #   dbt build --vars '{fuzzy_match_function: jaccard, fuzzy_match_threshold: 80}'
 vars:

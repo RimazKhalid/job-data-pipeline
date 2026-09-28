@@ -75,7 +75,7 @@ that also holds `JOB_PIPELINE_DEV` or `ACCOUNTADMIN`.
 | Mode | **Import**: the star is small (13,164 fact rows on 27 September), and a refresh after each pipeline run is enough |
 | Credentials | Entered in Power BI's credential store, never written into the `.pbix` or the repo |
 
-Relationships in the model follow the star (data model v3, section 7.4): each dimension one-to-many
+Relationships in the model follow the star (data_model.md, section 7.4): each dimension one-to-many
 to `fct_jobs`, filtering from the dimension to the fact. `dim_date` is related in six roles
 (`posting_date_sk`, `first_seen_date_sk`, `last_seen_date_sk`, `opening_date_sk`,
 `open_until_date_sk`, `disappeared_date_sk`); one is active, the others are used through

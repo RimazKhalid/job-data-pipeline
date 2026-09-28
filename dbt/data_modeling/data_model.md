@@ -1,758 +1,566 @@
-<!-- dbt/data_modeling/data_model.md -->
-# Data Model — Job Market Data Pipeline (Saudi Arabia)
+<!-- dbt/data_modeling/data_model.md: the same content as the data model document (.docx) -->
+# Data Model: Job Market Data Pipeline (Saudi Arabia)
 
-> **Superseded by [`data_model_v3.md`](data_model_v3.md) (27 September 2026).** The marts now follow
-> data model v3: one fact table with six date roles, dim_role, dim_skill and bridge_job_skill. This
-> file describes the marts of version 2.1 and is kept for reference.
+*Dimensional model for the curated job-market dataset, following the dimensional modeling process: business questions → business process → grain → dimensions → measures and flags → validation.*
 
-Target dimensional model for the curated job-market dataset, designed before the intermediate and marts layers were built, following the dimensional modeling process: business questions → business process → grain → dimensions → measures → validation.
+| **Pattern**           | Star schema: one fact table (fct_jobs, accumulating snapshot) joined to 8 dimensions, with one bridge table for the many-to-many link between jobs and skills |
+|-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Approach**          | ELT: raw data loaded untouched into Snowflake, transformed with dbt                                                                                           |
+| **Dimension history** | Type 1 (overwrite). Job history is kept in the fact through six date roles: posted, first seen, last seen, opening, open until, disappeared                   |
+| **Business timezone** | Asia/Riyadh. Every timestamp is converted before its date is taken                                                                                            |
+| **Status**            | Staging, intermediate and marts built and tested in Snowflake (section 11) |
+| **Date**              | 2026-09-28 |
 
-|                        |                                                                                                                                         |
-|------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| **Version**            | 2.1, 26 September 2026. Numbers are from the 26 September build (`run_id 20260926T200419Z`). Changes in Section 16 |
-| **Pattern**            | Star schema: **one fact table** (`fct_jobs`, an accumulating snapshot) and six dimensions                                               |
-| **Approach**           | ELT — raw data loaded untouched into Snowflake, transformed with dbt                                                                    |
-| **Dimension history**  | Type 1 (overwrite). A job opening’s lifecycle is kept as dates on the fact                                                              |
-| **Observation window** | September 2026, from 9 September. Employer boards: three collections, the last on 25 September (UTC). Aggregators: the 9–12 September campaign, plus one general query re-run on 26 September |
-| **Status**             | Built and tested end to end: 203 nodes (16 models, 5 seeds, 182 data tests), 202 pass and 1 warning; all layer reconciliations OK; marts exported to ADLS `curated/` as Parquet (Section 15) |
+## 1. Analytics goals
 
-## 1. Analytics goal
+**Goal: job market insight.** Give job seekers, career centers, and workforce analysts a view of hiring demand in Saudi Arabia: where the jobs are, who is hiring, what kind of roles are open, and which skills they ask for.
 
-Give job seekers, career centers, and workforce analysts a reliable view of hiring demand in Saudi Arabia: where the jobs are, who is hiring, what kind of roles are open, and how demand changes over time.
-
-Data quality is not a business question, but the fact table carries the counts that show it: copies landed, listings merged across sources, and openings with unknown attributes (Section 12.2). The quality page therefore reads the same star, in the MARTS schema, as every other page.
+Dataset reliability is not an analytics goal. The questions about it describe the pipeline, not the market, so they do not shape the star schema. They are answered in the Data quality report (section 10), because the project guide grades explicit quality results and a stated matching strategy with its error cases.
 
 ## 2. Business questions
 
-### Time frame
+Each question has one measure, one dimension (or one hierarchy), and one time frame. Two time frames are used:
 
-Every question names its period, so each has one correct, checkable answer. Three kinds of period are used, and each question says which one it means:
+- **Observation period.** From the first successful pull to the latest one (as_of_date). A job belongs to the period when its open interval, from its first seen date to its open-until date, overlaps it. Every job in fct_jobs does, because it was seen at least once.
 
-> **Observation window: September 2026** — the collections we made in September, starting on 9 September. “During September 2026” in a question means during these collections: openings that were advertised and removed before our first collection were never observed. A later collection in September is included without changing any question.
+- **Reporting week, Sunday to Saturday.** Used for events that happen on a date: a new opening (opening date) or a disappearance (disappeared date). The week comes from the event's date role in dim_date.
 
-- **Being advertised** in a window: the opening was live on a job board in at least one of our collections in that window (`first_seen_at` on or before the window end, and `last_seen_at` on or after the window start). This says nothing about when the job was **posted**: a job posted in June and still live on 16 September was being advertised in the window. Every collected opening meets this condition. Used by Q1 to Q7.
-- **Posted** in a period: the posting’s own date falls in the period. Postings without a posting date (all of Jooble) are left out, because the date we first observed them is a collection date, not a posting date. The last employer-board collection was on 25 September (UTC), so a job posted after it was never observed. Used by Q8 and Q9.
-- **Taken down** in a window: the opening disappeared from its employer’s job board between two of our collections (Section 7.2). Only employer boards (ATS sources) give this evidence; a job missing from an aggregator’s search results may simply not have been returned. Used by Q9.
+| **\#** | **Question**                                                                                                                            | **Time frame**               | **Data availability (build of 2026-09-27)**                                                                                    |
+|--------|-----------------------------------------------------------------------------------------------------------------------------------------|------------------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| Q1     | How many unique job openings were open in Saudi Arabia during the observation period?                                                   | Observation period           | 13,164 jobs from 13,777 listings                                                                                               |
+| Q2     | Which regions had the most open job openings during the observation period? City is the drill-down inside the same geography hierarchy. | Observation period           | 96.8% of listings at city level; 185 region-level and 261 country-level listings count at their own level only                 |
+| Q3     | Which employers had the most open job openings during the observation period, excluding undisclosed employers and recruitment agencies? | Observation period           | Excludes the Unknown member (Employer not disclosed) and companies flagged is_recruitment_agency                               |
+| Q4     | Which role families had the most open job openings during the observation period? Job category is the drill-down.                       | Observation period           | All jobs, from titles; the share in Other is reported                                                                          |
+| Q5     | What share of open job openings during the observation period falls into each employment type?                                          | Observation period           | Jobs with a known employment type; the known share is shown with the answer                                                    |
+| Q6     | Which experience levels are most requested in each region during the observation period?                                                | Observation period           | Known for 5,248 jobs (39.9%): 1,791 from the source field, 3,457 from title rules                                              |
+| Q7     | How many new job openings appeared in each week?                                                                                        | Week of the opening date     | Jobs with an employer-board listing only: 150 so far; one more point with each pull after the baseline                         |
+| Q8     | For job openings that disappeared in each week, what was the median number of days they were listed?                                    | Week of the disappeared date | Jobs with an employer-board listing only: 141 disappeared so far                                                               |
+| Q9     | Which skills are mentioned by the largest share of open job openings that have a full description, during the observation period?       | Observation period           | 3,710 of 4,749 jobs with a full description mention at least one skill; Jooble-only jobs (snippet) are outside the denominator |
 
-### What is counted
+**Open jobs, not new openings, for composition.** Q4 to Q6 and Q9 describe the jobs open during the period. New openings are 150 employer-board jobs so far, too few to describe the market's composition; Q7 tracks them directly.
 
-Sources do not report how many vacancies an advertisement covers, so nothing in this model counts vacancies. Three units are used, and each question names its unit:
+**Open during a chosen week.** A job is open during any period when its first seen date is on or before the period's end and its open-until date is on or after its start (section 7.3). Weekly comparisons are read against collection coverage (section 10.2), because a source not fully pulled in a week looks like a drop in the market.
 
-| **Unit**        | **Meaning**                                                                                                           | **Measure**                  |
-|-----------------|-----------------------------------------------------------------------------------------------------------------------|------------------------------|
-| **Listing**     | One posting as collected from one source. Workable returns one listing per city                                       | `SUM(listing_count)`         |
-| **Job posting** | One advertisement, after its listings on several sources have been merged. Counted once, however many cities it names | `COUNT(DISTINCT posting_sk)` |
-| **Job opening** | One job posting in one Saudi location: one row of `fct_jobs`                                                          | `SUM(job_count)`             |
+*Note: three items are not business questions.*
 
-In the Workable sample, 1,029 job postings produce 1,471 listings, because 205 postings name several cities (197 of them from Eram Talent). Grouped by city, postings and openings are equal; at every other level, postings are the right count of “how many jobs”.
+- **Workplace type mix.** Workplace type was known for 7.9% of listings on 2026-09-24, most of them from SmartRecruiters, so the answer would describe one platform. workplace_type stays as an attribute.
 
-### Questions
+- **Dataset reliability.** Answered in the Data quality report, section 10.
 
-One idea per question.
+- **Salary.** 283 listings (2.1%) carry a salary, too few for a market question. The field is standardised where present (section 7.1).
 
-| **\#** | **Business question**                                                                                                                                         | **Unit** | **Data availability**                                                                                                                                                                                                                                           |
-|--------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Q1     | How many unique job postings were being advertised in Saudi Arabia during September 2026?                                                                     | Postings | All sources                                                                                                                                                                                                                                                     |
-| Q2     | Which 10 Saudi cities had the most job openings being advertised during September 2026?                                                                       | Openings | All sources, after city standardization; openings with no known city are excluded                                                                                                                                                                               |
-| Q3     | Which 10 employers, excluding recruitment agencies, were advertising the most job postings in Saudi Arabia during September 2026?                             | Postings | All sources; agencies flagged in `dim_company` (Section 6)                                                                                                                                                                                                      |
-| Q4     | Which job categories had the most job postings being advertised in Saudi Arabia during September 2026?                                                        | Postings | All sources, via title keywords. Arabic titles fall into `Other` until Arabic keywords are added (Section 14)                                                                                                                                                   |
-| Q5     | What percentage of the job postings being advertised in Saudi Arabia during September 2026 were full-time?                                                    | Postings | Not available for Jooble; its postings are Unknown and excluded from the percentage                                                                                                                                                                             |
-| Q6     | What percentage of the job postings being advertised in Saudi Arabia during September 2026 were fully remote?                                                 | Postings | Known for Ashby, Workable, SmartRecruiters and JSearch; not available for Jooble or Greenhouse, excluded from the percentage. Hybrid counts as not remote                                                                                                       |
-| Q7     | Which experience level was requested most by job postings being advertised in each Saudi region during September 2026, with and without recruitment agencies? | Postings | Workable and SmartRecruiters only. Shown both ways, because two agencies hold 54% of the sampled postings with a known level (Section 14)                                                                                                                       |
-| Q8     | How many new job postings were posted in Saudi Arabia in each week of September 2026?                                                                         | Postings | ATS sources only: the only sources collected on the same dates through the month (JSearch’s latest posting date is 10 September; Jooble has no posting date). Weeks run Sunday to Saturday; the first and last weeks are partial (Section 9)                    |
-| Q9     | For job openings taken down during September 2026, what was the median number of days between their posting date and their removal?                           | Openings | ATS sources with two snapshots: 142 ATS listings disappeared (Section 12.1), 141 openings after matching. Median, because some postings date back to 2018. Per opening, because an employer can close one city of a posting and keep another |
+## 3. Business process and fact table type
 
-**Salary** is not asked about. None of the four employer-board payloads we collect has a salary field: Ashby returns salary bands only when called with `includeCompensation=true`, and `ashby.py` sets it to `false`. JSearch’s `job_salary_string` is empty in all 3,089 rows of the September campaign, and Jooble’s `salary` is free text that is about 96% empty (`source_investigation.md` §3.2), e.g. `"SAR 2500 - 3000 per month"`. The text is kept for display as `salary_text` in `dim_job_posting`, never as a number.
+***Job advertisement lifecycle: an employer publishes a job advertisement, and the pipeline observes it on one or more sources across repeated pulls until it disappears.***
 
-**Skills and technologies** are not modelled, although the brief mentions them: 65% of staged listings are Jooble snippets (8,928 of 13,777; 179 to 284 characters in the sample), many titles and descriptions are in Arabic, and skills are many-to-many with postings, which needs a bridge table next to the star. Section 14 describes the extension.
+| **Fact type**         | **One row per**            | **Decision**                                                                                                                                                          |
+|-----------------------|----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Transaction           | Each sighting of a listing | Not chosen: answers questions about pulls, not jobs                                                                                                                   |
+| Accumulating snapshot | Job, whole lifecycle       | fct_jobs. One date per milestone (posted, first seen, last seen, opening, open until, disappeared). A new pull updates the row as the job moves through its lifecycle |
 
-## 3. Business process
+Every business question is a plain join from fct_jobs to one dimension. A weekly question takes the week from the date role of its event, so the week is a dimension attribute, not a separate table.
 
-> **Job opening publication:** an employer publishes a job posting for one or more locations, and the pipeline observes it on one or more sources until it disappears.
-
-The star schema measures this process at the level of the job opening: one posting in one location.
+fct_jobs is rebuilt from staging on every run, so its history is as complete as the staging history.
 
 ## 4. Grain
 
-> `fct_jobs`**: one row represents one job opening — one job posting in one Saudi location, after the listings of the same posting on several sources have been merged into one.**
+**fct_jobs: one row represents one unique job advertisement in one Saudi location, after cross-source matching, regardless of how many sources published it.**
 
-- **Location.** A city when the source names one; otherwise the region, or Saudi Arabia as a whole (Section 6, `dim_location`).
-- **Multi-city postings.** Workable publishes a posting open in several cities as one listing per city, and each city is its own opening. The other sources give one location per listing; when its text names several Saudi cities, the first one is used. This is rare in the samples: one Ashby listing names two cities (`"Riyadh / Jeddah"`) and one more lists them only in `secondaryLocations`, which staging keeps but does not use (2 of 47); one SmartRecruiters listing of 908 says `"Multiple Cities"`; no JSearch, Jooble or Greenhouse row names two Saudi cities.
-- **The grain is tested.** `posting_sk` + `location_sk` must be unique in `fct_jobs`. The test fails if two cities of one Workable posting resolve to the same location, for example two cities missing from `seed_city_mapping` that both fall to country level. The samples held one such posting (As Sulayyil and Al Mubarraz); both cities are now in the seed.
-- **Expected rows.** Fewer openings than the staged listings (13,163 openings from 13,777 listings in the 26 September build): the difference is the cross-source overlap resolved by matching (Section 8). Fewer postings than openings: the difference is the extra cities of multi-city postings.
-- **Why the opening and not the listing.** Counting listings would count a job published on three sources three times, so “how many jobs were advertised in Riyadh?” would be wrong. The link from each opening back to its listings is kept in `int_jobs_matched` for lineage, and the fact carries the listing counts (Section 7.1), so no second fact table is needed.
+**Advertisement, not headcount.** No source gives the number of vacancies, so one advertisement hiring five people is one job.
 
-### Fact table type
+**Why the unique job and not the listing.** Counting listings would count a job published on three sources three times. The listing level is not lost: int_jobs_matched holds one row per listing with the job it was assigned to, and fct_jobs carries listing_count and source_count.
 
-`fct_jobs` is an **accumulating snapshot**: one row per job opening for its whole life, holding several dates (posted, first seen, last seen) that are filled in as they happen. It is a table rebuilt in full on every run; at about 13,000 listings an incremental model is not needed. A periodic snapshot (one row per opening per collection date) would be more precise for week-by-week stock questions, but with two to three collections it adds nothing.
+**Location.** The location is the city when it is known, otherwise the region, otherwise the country (section 6, dim_location).
 
-## 5. Schema diagram
+**Several cities in one location text.** "Riyadh or Jeddah" is one job whose city is not fixed, so it is not split into two. The job is kept at the region the named cities share, else at country level. Measured: 5 listings.
 
-One fact table in the center; each dimension joins it with a one-to-many relationship, and `dim_date` joins it three times (posted, first seen, last seen).
+**Workable multi-city postings.** Workable publishes a posting open in several cities as one object per city. Each city is one job, because the source itself separates them; the posting stays one row in dim_job_posting. Measured: 13,164 jobs from 12,713 postings.
 
-![Star schema: fct_jobs, the only fact table, and its six dimensions](schema_diagram.png)
+**Expected rows.** 13,777 listings became 13,164 jobs: exact matching merged 1,183 listings into 570 jobs. The fuzzy tier is off until its threshold is chosen (section 8.7).
 
-Star schema: `fct_jobs`, the only fact table, and its six dimensions
+## 5. Schema overview
+
+The model consists of one fact table, 8 dimension tables, and one bridge table:
+
+- **FCT_JOBS:** Accumulating snapshot, one row per job. Measures (job_count, listing_count, source_count, days_listed, salary), lifecycle attributes (lifecycle_status, status_basis, is_baseline, is_censored), and foreign keys, including six date roles.
+
+- **DIM_JOB_POSTING:** One row per posting, one to many with fct_jobs. Long text: job_title, description_text, description_basis, job_url, apply_url, salary_text.
+
+- **DIM_COMPANY:** Employer after entity resolution: company_sk, company_name, company_norm, industry, is_recruitment_agency.
+
+- **DIM_LOCATION:** Geography hierarchy with a level: location_sk, city, region, country, location_level, location_label.
+
+- **DIM_ROLE:** Two-level role hierarchy from titles: role_sk, job_category, role_family.
+
+- **DIM_DATE:** Role-playing date dimension for the six date roles: date_sk, full_date, day_of_week, week_start_date, month, quarter, year, is_weekend.
+
+- **DIM_JOB_ATTRIBUTES:** Junk dimension: job_attributes_sk, employment_type, workplace_type, remote_status, experience_level, experience_level_basis.
+
+- **DIM_SOURCE:** Source of the job's representative listing: source_sk, source_name, source_type, collection_method, source_priority.
+
+- **DIM_SKILL:** Skills and technologies: skill_sk, skill_name, skill_group. Reached through BRIDGE_JOB_SKILL.
+
+- **BRIDGE_JOB_SKILL:** One row per job per skill.
 
 ## 6. Dimensions
 
-Every dimension contains exactly one **Unknown member** (`'-1'`, or `-1` for `dim_date`). A fact row whose value is missing points to it instead of carrying a null foreign key, so every `relationships` test holds and reports can group missing values explicitly. Keys are built with `dbt_utils.generate_surrogate_key()`, except the `YYYYMMDD` key of `dim_date`.
+Every dimension contains an Unknown member ('-1', or -1 for dim_date), used only when nothing at all is known. A fact row whose value is missing points to it instead of carrying a null foreign key, so every relationships test holds and reports can group missing values explicitly. In dim_job_attributes, the combination where every attribute is Unknown is that member, so there is one Unknown row, not two. Every surrogate key is built with dbt_utils.generate_surrogate_key().
 
-### `dim_job_posting` — the advertisement itself
+### dim_job_posting: what the advertisement says
 
-One row per job posting, after merging. It holds the long text, so the fact table stays narrow. A posting open in several cities has one opening per city in the fact: the relationship is one-to-many.
+One row per posting. A Workable posting open in several cities is one row here and one job per city in fct_jobs, so the relationship is one to many. Holds the long text so the fact table stays narrow.
 
-| **Column**              | **Type**    | **Description**                                                                                                                                                               |
-|-------------------------|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `posting_sk`            | STRING (PK) | Hash of `source_name` and `source_job_id` of the representative listing (Section 8.3). The city is not part of it, so the cities of one Workable posting share one key        |
-| `job_title`             | STRING      | From the representative listing                                                                                                                                               |
-| `description_text`      | STRING      | Plain text from the representative listing: HTML entities decoded, tags removed, whitespace collapsed (Section 10). Only a snippet when the posting was found on Jooble alone |
-| `job_url` / `apply_url` | STRING      | From the representative listing                                                                                                                                               |
-| `salary_text`           | STRING      | Salary as free text when a listing has one (in practice Jooble). Display only                                                                                                 |
+| **Column**          | **Type**    | **Description**                                                                         |
+|---------------------|-------------|-----------------------------------------------------------------------------------------|
+| posting_sk          | STRING (PK) | Hash of source_name + source_job_id; a Workable posting keeps one key across its cities |
+| job_title           | STRING      | Title from the representative listing                                                   |
+| description_text    | STRING      | Longest cleaned description among the job's listings                                    |
+| description_basis   | STRING      | full; snippet when the only description is a Jooble snippet; none                       |
+| job_url / apply_url | STRING      | From the representative listing                                                         |
+| salary_text         | STRING      | Salary as published, from the listing the salary fields come from                       |
 
-### `dim_company` — who is advertising
+### dim_role: what role
 
-| **Column**              | **Type**    | **Description**                                                                                                                     |
-|-------------------------|-------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| `company_sk`            | STRING (PK) | Hash of `company_norm`; `'-1'` when the name is missing or a placeholder                                                            |
-| `company_name`          | STRING      | Display name: the standard name from `seed_company_aliases` when listed there, otherwise the name from the highest-priority listing |
-| `company_norm`          | STRING      | Matching key: legal suffixes and labels removed, then mapped through `seed_company_aliases`                                         |
-| `industry`              | STRING      | Most frequent industry across the company’s listings (Workable / SmartRecruiters only)                                              |
-| `is_recruitment_agency` | BOOLEAN     | From `seed_company_aliases`. Intermediaries — recruitment agencies and job boards — advertise on behalf of other employers, so Q3 excludes them and Q7 is shown with and without them |
+| **Column**   | **Type**    | **Description**                                                                                                                                                                                                              |
+|--------------|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| role_sk      | STRING (PK) | Hash of job_category                                                                                                                                                                                                         |
+| job_category | STRING      | From title keywords (seed_job_categories, 170 keywords, 18 categories): the most specific keyword wins (lowest priority number), then the longest. Other when no keyword matches; Unknown when the title has no matching key |
+| role_family  | STRING      | From seed_role_families; every category belongs to exactly one family                                                                                                                                                        |
 
-`seed_company_aliases` maps known spellings of a company to one standard name, and flags agencies. It covers:
+The hierarchy has two levels by design, so the dimension is never a single attribute. The proposed families, confirmed when seed_role_families is written (section 13):
 
-- the Ashby board slugs (e.g. `lilt-production` → `Lilt`), because Ashby’s API returns no company name: the ten boards collected now, plus `camunda`, collected earlier and no longer pulled;
-- placeholders such as `Private Company`, `Confidential` or text that is not a company name, mapped to Unknown (`'-1'`);
-- every company name found in the 26 September build that was not yet in the seed, reviewed on 26 September: spellings of one company merged (e.g. `Aramco`, `Saudi Aramco` and `Saudi Aramco (ASC)` → `Saudi Aramco`; `Aramco Overseas Company` stays separate), recruitment agencies and job boards flagged, bilingual names reduced to their English part and emoji removed from the display name.
+| **role_family**              | **job_category**                                                                                 |
+|------------------------------|--------------------------------------------------------------------------------------------------|
+| Technology and Data          | IT & Software; Data & Analytics                                                                  |
+| Engineering and Construction | Engineering; Construction & Trades                                                               |
+| Business and Finance         | Management; Consulting & Strategy; Finance & Accounting; Legal; Administration; HR & Recruitment |
+| Sales, Marketing and Service | Sales & Business Development; Marketing; Customer Service; Design & Creative                     |
+| Operations and Hospitality   | Operations & Supply Chain; Hospitality & Food                                                    |
+| Health and Education         | Healthcare; Education & Training                                                                 |
+| Other / Unknown              | Other; Unknown                                                                                   |
 
-It now holds 742 aliases: 47 placeholders and 695 aliases of 545 companies, 175 of them flagged as agencies or job boards. 85 aliases are in Arabic script, so an Arabic spelling of a listed company resolves to its English name. Every alias is stored exactly as `normalize_company()` outputs it; `analyses/companies_not_in_seed.sql` lists the names still outside the seed and candidate pairs to merge.
+### dim_company: who is hiring
 
-A job board that names no employer (e.g. a listing whose company is the board itself) keeps the board's name and is flagged, rather than being shown as unknown. The Unknown member of `dim_company` is displayed as **Employer not disclosed**: almost all of these listings come from Jooble, whose redirect URLs and LinkedIn “confidential” postings do not reveal the employer.
+| **Column**            | **Type**    | **Description**                                                                                                                 |
+|-----------------------|-------------|---------------------------------------------------------------------------------------------------------------------------------|
+| company_sk            | STRING (PK) | Hash of company_norm; '-1' is Employer not disclosed                                                                            |
+| company_name          | STRING      | Standard name from seed_company_aliases, else the name on the company's highest-priority listing                                |
+| company_norm          | STRING      | Matching key: the standard name, normalised                                                                                     |
+| industry              | STRING      | Most frequent industry across the company's listings (Workable and SmartRecruiters only); ties go to the higher-priority source |
+| is_recruitment_agency | BOOLEAN     | From seed_company_aliases; true for agencies and platforms that post for other employers                                        |
 
-### `dim_location` — where
+**Employer entity resolution.** Exact matching on a cleaned name is not enough, so resolution runs in three steps:
 
-Hierarchy: country → region → city.
+1\. **Normalise.** Lower-case, punctuation removed, legal suffixes and labels removed (company, co, ltd, limited, inc, llc, plc, corp, group, est, careers, jobs, ksa, saudi arabia, شركة, مؤسسة). Placeholders such as Private Company and Confidential map to the Unknown member.
 
-| **Column**       | **Type**    | **Description**                                                                   |
-|------------------|-------------|-----------------------------------------------------------------------------------|
-| `location_sk`    | STRING (PK) | Hash of `city`, `region`, `location_level`                                        |
-| `city`           | STRING      | Standard city from `seed_city_mapping`; `'Unknown'` when the source names no city |
-| `region`         | STRING      | Standard region (13 Saudi regions); `'Unknown'` when not known                    |
-| `country`        | STRING      | `'SA'`                                                                            |
-| `location_level` | STRING      | `city`, `region` or `country`: the most precise level the source gave; `unknown` on the Unknown member |
-| `location_label` | STRING      | Display name for reports: the city; `<region> (no city given)`; or `Saudi Arabia (no city given)` |
+2\. **Alias seed.** seed_company_aliases maps 742 spellings to one standard name each; 195 of them are flagged as recruitment agencies.
 
-A listing that names only a region (e.g. Jooble’s `"Al Qassim Region"`) keeps its region, so it still counts in region-level answers (Q7). A listing that says only “Saudi Arabia”, or is remote with no city, is at `country` level. The Unknown member is used only when nothing is known.
+3\. **Candidates.** analyses/companies_not_in_seed lists pairs of company keys in the same city where one key contains the other as whole words ("qiddiya" in "qiddiya investment") or they share most of their words. A team member accepts or rejects each pair; accepted pairs go into the seed. The report states the candidates listed, the pairs accepted, and the listings resolved.
 
-In the samples, 49 of 200 JSearch cities are written in Arabic (جدة، الدمام). The four Workable cities first missing from the seed (`Udhailiyah`, `Hasa Industrial City`, `As Sulayyil`, `Al Mubarraz`) were added on 25 September. Arabic spellings match only when `normalize_text()` gives the seed and the lookup the same form. Removing diacritics and tatweel and unifying the alef forms, with the seed’s aliases stored that way, lets one alias cover variants that the seed now lists one by one (King Abdullah Economic City appears with and without shadda and hamza).
+Measured examples the process must catch (2026-09-24): Qiddiya Investment Company (364 listings) and Qiddiya (58); JASARA PMC (203) and Jasara Program Management Company (39); WSP (56) and WSP Global Inc. (33); AtkinsRéalis (178) and its former name SNC-Lavalin (53). Brands stay as advertised: SOFITEL, RAFFLES, and FAIRMONT are not merged into AccorHotel.
 
-### `dim_date` — when
+### dim_location: where
 
-Generated with Snowflake’s `generator(rowcount => 10000)` from the earliest date in any role (usually an old posting date) to the latest collection date, so every `relationships` test on a date key passes. **Role-playing dimension:** used for posting date, first-seen date and last-seen date. In Power BI it is loaded once per role (Posted Date, First Seen Date, Last Seen Date), each with an active relationship.
+| **Column**     | **Type**    | **Description**                                                                         |
+|----------------|-------------|-----------------------------------------------------------------------------------------|
+| location_sk    | STRING (PK) | Hash of city + region + location_level                                                  |
+| city           | STRING      | Standard city from seed_city_mapping; Unknown below city level                          |
+| region         | STRING      | Standard region (13 Saudi regions); Unknown at country level                            |
+| country        | STRING      | 'SA'                                                                                    |
+| location_level | STRING      | city, region, or country                                                                |
+| location_label | STRING      | Display name: the city, "\<region\> (no city given)", or "Saudi Arabia (no city given)" |
 
-| **Column**                   | **Type** | **Description**                                                                                                                                                 |
-|------------------------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `date_sk`                    | INT (PK) | `YYYYMMDD`                                                                                                                                                      |
-| `full_date`                  | DATE     |                                                                                                                                                                 |
-| `day_of_week`                | STRING   |                                                                                                                                                                 |
-| `week_start_date`            | DATE     | The Sunday that starts the date’s week, matching the Saudi working week. Weekly grouping (Q8) uses this, not a week number, so weeks never collide across years |
-| `month` / `quarter` / `year` | INT      |                                                                                                                                                                 |
-| `is_weekend`                 | BOOLEAN  | Friday and Saturday                                                                                                                                             |
+The city is looked up in the city field first, then in the location text. A match inside a longer match is part of it ("makkah" in "makkah province"). Measured on 2026-09-27: 13,331 listings at city level, 185 at region level (for example Jooble's "Al Qassim Region"), 261 at country level. No listing carries a non-Saudi country.
 
-### `dim_source` — where the representative listing was collected
+### dim_date: when
 
-Six rows plus Unknown, loaded from a new seed, `seed_sources.csv` (Section 10.2), so the values are reviewed in Git instead of hard-coded in SQL.
+| **Column**             | **Type** | **Description**                                                |
+|------------------------|----------|----------------------------------------------------------------|
+| date_sk                | INT (PK) | YYYYMMDD                                                       |
+| full_date              | DATE     | Calendar date in Asia/Riyadh                                   |
+| day_of_week            | STRING   | Day name                                                       |
+| week_start_date        | DATE     | Sunday that starts the week; the key for every weekly question |
+| month / quarter / year | INT      | Calendar attributes                                            |
+| is_weekend             | BOOLEAN  | Friday and Saturday (Saudi weekend)                            |
 
-| **Column**          | **Type**    | **Description**                                                           |
-|---------------------|-------------|---------------------------------------------------------------------------|
-| `source_sk`         | STRING (PK) | Hash of `source_name`                                                     |
-| `source_name`       | STRING      | `workable`, `smartrecruiters`, `ashby`, `greenhouse`, `jsearch`, `jooble` |
-| `source_type`       | STRING      | `ATS` (employer job boards) or `Aggregator` (query-based search engines); `Unknown` on the Unknown member |
-| `collection_method` | STRING      | `Company board API` or `Query matrix API`                                 |
-| `source_priority`   | INT         | 1 to 6: the order used to choose the representative listing (Section 8.4) |
+fct_jobs joins dim_date in six roles: posted, first seen, last seen, opening, open until, and disappeared. The range runs from the earliest date of any role to the latest successful pull, so every role has a row: posting dates reach back to 2018-07-11, and open_until_date can reach the latest pull. ATS snapshot dates arrive as midnight UTC and aggregator timestamps as real times; both are converted to Asia/Riyadh before the date is taken, so a pull lands in the Saudi week it happened in.
 
-The fact joins it through `primary_source_sk`, the source of the representative listing. All four ATS sources come before both aggregators in `source_priority`, so `source_type = 'ATS'` on this key means the opening has at least one employer-board listing; Q8 and Q9 use this. How many listings each source contributed is carried on the fact itself (Section 7.1).
+### dim_source: where the representative listing was collected
 
-### `dim_job_attributes` — job classification (junk dimension)
+| **Column**        | **Type**    | **Description**                                                              |
+|-------------------|-------------|------------------------------------------------------------------------------|
+| source_sk         | STRING (PK) | Hash of source_name                                                          |
+| source_name       | STRING      | workable, smartrecruiters, ashby, greenhouse, jsearch, jooble                |
+| source_type       | STRING      | ATS (employer job boards) or Aggregator (query-based search engines)         |
+| collection_method | STRING      | Company board API or Query matrix API                                        |
+| source_priority   | INT         | 1 to 6, in the order above; decides the representative listing (section 8.6) |
 
-Five short, low-cardinality attributes combined into one dimension, instead of five single-column dimensions. One row per observed combination. The combination in which all five are Unknown **is** the Unknown member (`'-1'`); there is no second all-Unknown row.
+fct_jobs references it through primary_source_sk, the source of the job's representative listing. The job's other sources are counted in listing_count per source and source_count.
 
-| **Column**          | **Type**    | **Values**                                                                                                                                                                                                                             |
-|---------------------|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `job_attributes_sk` | STRING (PK) | Hash of the five attributes; `'-1'` when all five are Unknown                                                                                                                                                                          |
-| `job_category`      | STRING      | 18 categories from title keywords (`seed_job_categories`); `Other` when the title matches none; `Unknown` when there is no title. Moved here from version 1’s `dim_role`, which held only this column                                  |
-| `employment_type`   | STRING      | `Full-time`, `Part-time`, `Contract`, `Internship`, `Temporary`, `Volunteer`, `Full-time and Part-time`, `Other`, `Unknown`                                                                                                                                       |
-| `workplace_type`    | STRING      | `Remote`, `Hybrid`, `OnSite`, `Unknown`                                                                                                                                                                                                |
-| `remote_status`     | STRING      | `Remote`, `Not remote`, `Unknown`. Taken from `workplace_type` when it is known, otherwise from the source’s remote flag (Section 10). Hybrid is `Not remote`. Used for Q6                                                             |
-| `experience_level`  | STRING      | Closed list: `Internship`, `Entry`, `Associate`, `Mid-Senior`, `Director`, `Executive`, `Unknown`, mapped by `seed_experience_levels`. A raw value missing from the seed passes through unchanged and fails the `accepted_values` test |
+### dim_job_attributes: what kind of job (junk dimension)
 
-## 7. Facts and measures
+| **Column**             | **Type**    | **Values**                                                                                                |
+|------------------------|-------------|-----------------------------------------------------------------------------------------------------------|
+| job_attributes_sk      | STRING (PK) | Hash of the five attributes                                                                               |
+| employment_type        | STRING      | Full-time, Part-time, Contract, Internship, Temporary, Volunteer, Full-time and Part-time, Other, Unknown |
+| workplace_type         | STRING      | Remote, Hybrid, OnSite, Unknown                                                                           |
+| remote_status          | STRING      | Remote, Not remote, Unknown                                                                               |
+| experience_level       | STRING      | Internship, Entry, Associate, Mid-Senior, Director, Executive, Unknown                                    |
+| experience_level_basis | STRING      | source, title, unknown                                                                                    |
 
-### 7.1 `fct_jobs` — the only fact table
+**Source values.** Experience level is a closed vocabulary taken from the values Workable and SmartRecruiters use (seed_experience_levels). The mapping ignores letter case. Counts measured on 2026-09-24:
 
-| **Column**                             | **Kind**                   | **Logic**                                                                                                                                                                                              |
-|----------------------------------------|----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `job_sk`                               | PK                         | Key of the job opening, from `int_jobs_matched` (Section 8.3)                                                                                                                                          |
-| `posting_sk`                           | FK                         | Posting of the representative listing                                                                                                                                                                  |
-| `company_sk`, `location_sk`            | FK                         | Shared by every listing of the opening, because company and city are part of the match key (Section 8.3)                                                                                               |
-| `primary_source_sk`                    | FK                         | Source of the representative listing                                                                                                                                                                   |
-| `job_attributes_sk`                    | FK                         | Each attribute chosen across the opening’s listings (Section 8.4)                                                                                                                                      |
-| `posting_date_sk`                      | FK (role: posted)          | Earliest posting date of the opening’s ATS listings; when it has none, the earliest of any listing; `-1` when no listing has one                                                                       |
-| `first_seen_date_sk`                   | FK (role: first seen)      | `min(first_seen_at)` across the opening’s listings                                                                                                                                                     |
-| `last_seen_date_sk`                    | FK (role: last seen)       | `max(last_seen_at)` across the opening’s listings                                                                                                                                                      |
-| `job_count`                            | Measure — **additive**     | `1` per row: one job opening                                                                                                                                                                           |
-| `listing_count`                        | Measure — **additive**     | Listings merged into the opening; `1` when nothing was merged                                                                                                                                          |
-| `listing_count_<source>` (six columns) | Measures — **additive**    | The same count for each source: `_workable`, `_smartrecruiters`, `_ashby`, `_greenhouse`, `_jsearch`, `_jooble`. The six add up to `listing_count`                                                     |
-| `copies_landed`                        | Measure — **additive**     | Copies of those listings landed in RAW before within-source deduplication (new staging column, Section 10.1)                                                                                           |
-| `source_count`                         | Measure — **non-additive** | Number of distinct sources among the listings, 1 to 6                                                                                                                                                  |
-| `days_open`                            | Measure — **non-additive** | Days from the posting date to the last date the opening was observed. Null when there is no posting date. Summarized with a median, never summed. For openings still advertised it means “open so far” |
-| `is_active`                            | Flag                       | Whether the opening is still advertised on its employer’s board; null when the opening was found on aggregators only (Section 7.2) |
-| `status_basis`                         | Label                      | `employer board` (the opening has an ATS listing; `is_active` is true or false) or `aggregator query` (aggregators only; `is_active` is null) |
+| **Source value (Workable, SmartRecruiters)** | **Listings** | **Standard value**        |
+|----------------------------------------------|--------------|---------------------------|
+| Internship                                   | 25           | Internship                |
+| Entry level                                  | 527          | Entry                     |
+| Associate                                    | 201          | Associate                 |
+| Mid-Senior level                             | 851          | Mid-Senior                |
+| Director                                     | 118          | Director                  |
+| Executive                                    | 70           | Executive                 |
+| Not Applicable                               | 50           | Title rules, else Unknown |
+| Empty (Workable)                             | 636          | Title rules, else Unknown |
+| No field (other four sources)                | 10,450       | Title rules, else Unknown |
 
-The three date roles make every question’s time frame answerable: “being advertised” uses first seen and last seen, “posted” uses the posting date, and “taken down” uses last seen with `is_active` (Section 2).
+**Title rules.** When the source gives no level, a word in the title decides it (seed_seniority_keywords). A word is kept when the 1,510 postings whose source gives a level agree with it at least 70% of the time:
 
-Report measures built on these columns:
+| **Title word**              | **Level**                     | **Labelled postings** | **Agreement** |
+|-----------------------------|-------------------------------|-----------------------|---------------|
+| director                    | Director                      | 119                   | 72%           |
+| intern, interns, internship | Internship                    | 7                     | 100%          |
+| senior                      | Mid-Senior                    | 185                   | 74%           |
+| lead                        | Mid-Senior                    | 37                    | 73%           |
+| leader                      | Mid-Senior                    | 11                    | 82%           |
+| manager                     | Mid-Senior                    | 295                   | 81%           |
+| assistant manager           | None: blocks the manager rule | 11                    | 45%           |
 
-| **Measure**      | **Definition**               | **Additive**                                                              |
-|------------------|------------------------------|---------------------------------------------------------------------------|
-| Job openings     | `SUM(job_count)`             | Yes                                                                       |
-| Job postings     | `COUNT(DISTINCT posting_sk)` | No: recomputed at every level. Equal to job openings when grouped by city |
-| Listings         | `SUM(listing_count)`         | Yes                                                                       |
-| Median days open | `MEDIAN(days_open)`          | No                                                                        |
+Left out: junior (40%), trainee (44%), consultant (64%). Together the rules agree with the source 78% of the time and raise the listings with a known level from 11.9% to 38.9%. Precedence: source field, then title rule, then Unknown; experience_level_basis records which.
 
-Counting postings as a distinct count of a key on the fact is the usual pattern for a line-level fact, in the same way that orders are counted on an order-line fact table.
+### dim_skill: which skills
 
-### 7.2 Lifecycle: what `is_active` means
+| **Column**  | **Type**    | **Description**                                                                        |
+|-------------|-------------|----------------------------------------------------------------------------------------|
+| skill_sk    | STRING (PK) | Hash of skill_name                                                                     |
+| skill_name  | STRING      | Canonical skill from seed_skills                                                       |
+| skill_group | STRING      | One of 12 groups, for example Data and AI, Cloud and DevOps, Certifications, Languages |
 
-No source reports whether a posting was filled, closed, or deleted. The pipeline can only see that a listing **disappeared**, and that is evidence only where the source lists every open job.
+seed_skills holds 133 keywords for 125 skills: terms found in at least 10 of the 4,304 postings with a full description. Ambiguous words are left out: sales, kpi, hospitality, tax, lean, soc, iam, swift, react, vulnerability, .net, c#.
 
-| **Source type** | **`is_active`**                                                                                                                                                                  | **Used for Q9** |
-|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------|
-| ATS             | `false` when the posting is missing from the latest collection of its own board. A board’s file lists every open job, so this is direct evidence that the posting was taken down | Yes             |
-| Aggregator      | **Null (unknown).** A query returns only what matched that query on that day, and ranking changes between runs, so a listing missing from a later run proves nothing               | No              |
+## 7. Facts, measures and bridge
 
-An opening with at least one ATS listing takes its status from its ATS listings; an opening found only on aggregators has no status. `status_basis` says which case applies:
+### 7.1 fct_jobs
 
-    -- int_job_openings, grouped by job_sk
-    boolor_agg(iff(source_type = 'ATS', is_active, null))                         as is_active,
-    iff(count_if(source_type = 'ATS') > 0, 'employer board', 'aggregator query')  as status_basis
+Built from int_job_openings, which applies the survivorship and lifecycle rules once, so every column below has one definition.
 
-A test in `marts/schema.yml` enforces it: `is_active` is not null exactly when `status_basis = 'employer board'`.
+| **Column**                                          | **Kind**               | **Logic**                                                                                                                       |
+|-----------------------------------------------------|------------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| job_sk                                              | PK                     | From int_jobs_matched (section 8.5)                                                                                             |
+| posting_sk                                          | FK                     | dim_job_posting; the representative listing's posting                                                                           |
+| company_sk, location_sk, role_sk, job_attributes_sk | FK                     | Survivorship rules, section 8.6; '-1' when nothing is known                                                                     |
+| primary_source_sk                                   | FK                     | dim_source; the representative listing's source                                                                                 |
+| posting_date_sk                                     | FK (role: posted)      | Earliest employer-board posting date, else the earliest of any listing; -1 when none                                            |
+| first_seen_date_sk                                  | FK (role: first seen)  | First seen date across the job's listings                                                                                       |
+| last_seen_date_sk                                   | FK (role: last seen)   | Last seen date across the job's listings                                                                                        |
+| opening_date_sk                                     | FK (role: opening)     | First seen date of a new opening (rules below); -1 otherwise                                                                    |
+| open_until_date_sk                                  | FK (role: open until)  | Last day the job counts as open (rules below)                                                                                   |
+| disappeared_date_sk                                 | FK (role: disappeared) | Disappeared date of a disappeared job; -1 otherwise                                                                             |
+| lifecycle_status                                    | Attribute              | open, disappeared, or unknown (rules below)                                                                                     |
+| status_basis                                        | Attribute              | employer board when the job has an ATS listing; aggregator query otherwise                                                      |
+| is_baseline                                         | Flag                   | True when any of the job's listings was seen in the baseline pull of its board or source                                        |
+| is_censored                                         | Flag                   | True when the job has not disappeared, so its duration is not complete                                                          |
+| match_tier                                          | Attribute              | single, exact, or fuzzy                                                                                                         |
+| job_count                                           | Measure, additive      | 1 per row                                                                                                                       |
+| listing_count                                       | Measure, additive      | Listings merged into the job; also one column per source (listing_count_workable and the others)                                |
+| copies_landed                                       | Measure, additive      | Landed copies of those listings in RAW                                                                                          |
+| source_count                                        | Measure, non-additive  | Distinct sources among the job's listings                                                                                       |
+| days_listed                                         | Measure, non-additive  | Disappeared jobs only: days from the posting date (else first seen) to the disappeared date. Summarised by median, never summed |
+| days_listed_basis                                   | Attribute              | posted or first_seen                                                                                                            |
+| salary_min_amount, salary_max_amount                | Measure, non-additive  | Parsed from the salary text as published                                                                                        |
+| salary_currency                                     | Attribute              | SAR or USD                                                                                                                      |
+| salary_period                                       | Attribute              | hour, day, week, month, or year                                                                                                 |
+| salary_min_sar_month, salary_max_sar_month          | Measure, non-additive  | Converted for month, week and year; null for hour and day                                                                       |
 
-**Why null and not a 7-day rule.** Until 26 September an aggregator listing counted as inactive when it had not been returned within 7 days of its source’s latest run. The 26 September re-run repeated only the general query (`L0_general_sa`), which returns about 1,000 listings, so 9,851 of the 11,032 aggregator listings would have been marked taken down although nothing showed they closed. Repeating the whole campaign would not fix it: it used about 770 Jooble requests, more than one key’s lifetime quota, and even the same query returns a different ranking on another day. In the 26 September build: 2,596 openings active and 141 taken down (employer board); 10,426 without a status (aggregator query).
+**Pull calendar.** int_landed_files reads the file metadata in RAW, the only intermediate model that does, because staging flattens files into postings and a failed pull leaves no trace there. A pull is successful when its payload is a job list: for an ATS board, a jobs array, an empty one included, and not an error body; for an aggregator page, HTTP 200 with a parseable body. int_board_pulls holds one row per board, or per aggregator source, per pull date. Without this rule, one failed request would mark every job on that board as disappeared.
 
-Version 1 used “active if any listing is active”, so a job that was gone from its Workable board stayed active through an aggregator copy, and dropped out of Q9. The status is as of the latest employer-board collection, 25 September.
+**Baseline pull.** The first successful pull of each ATS board, and the first collection week of each aggregator. Every job it contains existed before the pipeline looked, so none of them is a new opening. At first sight the median posting was already 137 days old in SmartRecruiters and 94 days in Workable, and Jooble has no posting date.
 
-The removal date is known only to within the gap between two collections: `last_seen_date` is the last day the opening was still seen.
+**Full pull per week.** int_source_weeks records, for each source and week, whether the source was fully pulled: for an ATS source, a successful pull of its boards; for an aggregator, a week that repeats the baseline campaign's queries (aggregator_campaign_coverage, 1.0 means all of them).
 
-### 7.3 Non-additive values
+**Lifecycle status.** No source exposes a posting status, so a closed posting and a removed posting cannot be told apart; both are recorded as disappeared.
 
-Percentages and medians are recalculated from their components, never summed or averaged across groups:
+- An ATS listing disappears when staging marks it inactive and K successful pulls of its own board confirm it is gone (disappearance_misses, currently 1). A failed pull confirms nothing.
 
-| **Value**                        | **Formula**                                                                                                             |
-|----------------------------------|-------------------------------------------------------------------------------------------------------------------------|
-| Share of full-time postings (Q5) | `COUNT(DISTINCT posting_sk)` where `employment_type = 'Full-time'` ÷ the same where `employment_type <> 'Unknown'`      |
-| Share of remote postings (Q6)    | `COUNT(DISTINCT posting_sk)` where `remote_status = 'Remote'` ÷ the same where `remote_status <> 'Unknown'`             |
-| Median days open (Q9)            | `MEDIAN(days_open)` over the filtered openings, with `AVG` shown beside it for reference — never an average of averages |
-| Cross-source overlap             | `SUM(job_count)` where `source_count > 1` ÷ `SUM(job_count)`. A lower bound (Section 8.5)                               |
+- A job is disappeared when every one of its ATS listings disappeared, and open while one is still on its board.
+
+- A job found on aggregators only is unknown. A query result is a ranked slice of the market, so a listing missing from a later run may still be open.
+
+**Open interval.** The job counts as open from its first seen date to its open-until date:
+
+- Disappeared job: the day before its disappeared date.
+
+- Any other job: its latest evidence plus the recent window (recent_window_days, currently 7), never later than the latest successful pull. The latest evidence of an ATS listing still on its board is its board's latest successful pull; of an aggregator listing, its last seen date.
+
+**New openings.** A job is a new opening when it has an employer-board listing and none of its listings was seen in a baseline pull; its opening date is its first seen date. A job found on aggregators only never gets an opening date: first appearing in a later campaign is no more evidence of a new opening than disappearing is of a closure. On 2026-09-27, 923 jobs were outside the baseline; 773 of them were aggregator-only, and 150 are new openings.
+
+**Salary.** Parsed from the salary text when it follows one grammar: currency, amount or range, period ("SAR 15000 - 17000 per month", "\$45000 per year"). Every one of the 283 salary texts on 2026-09-27 follows it. Monthly amounts are kept, yearly divided by 12, weekly multiplied by 52/12; USD is converted at 3.75 SAR per USD from seed_currency_rates. Hourly and daily amounts are not converted, because the hours and days worked per month are unknown. Salary text inside titles is not parsed.
+
+### 7.2 bridge_job_skill
+
+Grain: one row per job per skill. Built from int_job_skills (15,262 rows on 2026-09-27). A skill keyword is matched as a whole word in the titles and cleaned descriptions of every listing of the job, not only the representative.
+
+| **Column** | **Kind**  | **Logic**                                           |
+|------------|-----------|-----------------------------------------------------|
+| job_sk     | FK        | fct_jobs                                            |
+| skill_sk   | FK        | dim_skill                                           |
+| matched_in | Attribute | title, when found in a title; description otherwise |
+
+### 7.3 Answering by time frame
+
+| **Time frame**              | **How**                                                                                          | **Questions**                  |
+|-----------------------------|--------------------------------------------------------------------------------------------------|--------------------------------|
+| Observation period          | Every row of fct_jobs                                                                            | Q1 to Q6, Q9                   |
+| Week of an event            | opening_date_sk or disappeared_date_sk joined to dim_date, grouped by week_start_date            | Q7, Q8                         |
+| Open during a chosen period | Filter: first seen date on or before the period's end, and open-until date on or after its start | Any follow-up by week or month |
+
+### 7.4 Using the model in Power BI
+
+- Relationships: every dimension 1:\* fct_jobs, filtering from the dimension to the fact. dim_date is loaded once and related through each date role; only one role is active at a time, the others are used with USERELATIONSHIP.
+
+- Skills: dim_skill 1:\* bridge_job_skill \*:1 fct_jobs. The bridge to fct_jobs relationship filters in both directions, so a skill filter reaches the jobs.
+
+- A job with three skills appears three times in the bridge, so jobs are counted as a distinct count of job_sk whenever the bridge is in the filter path.
+
+- Postings are counted as a distinct count of posting_sk, because a Workable posting in several cities is several jobs.
 
 ## 8. Cross-source matching specification
 
-Builds `int_jobs_matched`: one row per listing, with the `job_sk` of the opening it belongs to and a flag for the opening’s representative listing. Matching is **heuristic** — sources share no common identifier — so the rules are designed to be explainable and measurable.
+Assigns one job_sk to every listing of the same real job, in three models: int_listing_groups (exact tier), int_match_candidates (fuzzy candidate pairs), and int_jobs_matched (fuzzy tier and job keys). Sources share no common identifier, so matching is heuristic, and every rule is designed to be explainable and measurable.
 
-### 8.1 The rule that is never broken
+### 8.1 Publisher rule
 
-> **Two listings from the same publisher are never merged.**
+**Two postings from the same publisher are never merged.** The publisher is the employer's own board for an ATS listing, and the site the listing came through for an aggregator listing (Jooble's source domain, JSearch's job_publisher), normalised so "Jobrapido" and "Jobrapido.com" are one publisher.
 
-The publisher is whoever actually put the advertisement online:
+If Workable lists two postings with the same title and city under different IDs, the employer itself says they are two openings. Inside one match key, each publisher's postings are ranked by posting date, first seen, and posting key, and paired rank to rank: the first posting of every publisher forms one group, the second the next one. So an employer's two identical-looking postings stay two jobs, and each can still take an aggregator copy.
 
-| **Source type** | **Publisher**                              |
-|-----------------|--------------------------------------------|
-| ATS             | The employer’s board (the landed file)     |
-| JSearch         | `job_publisher` (e.g. LinkedIn, Jobrapido) |
-| Jooble          | `underlying_source` (e.g. jobleads.com)    |
+**Why publisher, not source.** An aggregator republishes many sites, so two Jooble listings from different publishers can be the same job. Measured on 2026-09-24 (same lower-cased title, company, and place, different IDs):
 
-If an employer’s board lists two postings with the same title and city under different IDs, the employer says they are two openings, so they stay two. Aggregators are different: they re-collect from other sites, so the same job can reach JSearch once through LinkedIn and once through Jobrapido, under two different `job_uid`s. Those two may be merged; two listings that both came through LinkedIn may not. This prevents the worst error, under-counting real jobs, without double-counting aggregator copies.
+| **Source**         | **Groups** | **Listings in groups** | **Share of source** | **Groups across different publishers** |
+|--------------------|------------|------------------------|---------------------|----------------------------------------|
+| Jooble             | 216        | 594                    | 7.2%                | 19                                     |
+| JSearch            | 11         | 22                     | 1.1%                | 6                                      |
+| Workable (control) | 38         | 84                     | 5.5%                | Not applicable                         |
 
-### 8.2 Matching keys (built in `int_job_listings`)
+A rule by source would leave the 25 cross-publisher groups unmerged; the publisher rule merges them. Workable shows the base rate of employers posting the same title twice in one city.
 
-| **Key**        | **Rules**                                                                                                                       | **Example**                                                                              |
-|----------------|---------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
-| `title_norm`   | Lower-case, punctuation removed, bracketed notes removed, hiring noise and location words removed, `sr` / `jr` / `mgr` expanded | `"Senior Oil & Gas Safety Officer (Saudi National)"` → `"senior oil gas safety officer"` |
-| `company_norm` | Lower-case, punctuation removed, legal suffixes and labels removed, then mapped through `seed_company_aliases`                  | `"Qiddiya Investment Company"` → `"qiddiya investment"`                                  |
-| `city_std`     | Seed lookup on the city field, else on the location text                                                                        | جدة and `Jiddah` → `Jeddah`; Greenhouse `"Riyadh, KSA"` → `Riyadh`                       |
+### 8.2 Matching keys (built in int_job_listings)
 
-Titles are not translated: an Arabic title matches only the same Arabic title (Section 14).
-
-### 8.3 Matching rule and keys
-
-**Exact match only:** listings match when `title_norm`, `company_norm` and `city_std` are all equal and not null. Listings missing a company or a city are never matched; each stays its own opening.
-
-**No fuzzy matching.** A Jaro-Winkler threshold was tested and rejected: it scores `data analyst` against `data analyst intern` at 92 and `project engineer` against `project engineer trainee` at 93, because it rewards a shared beginning and the word that separates two roles comes last. Exact matching after normalization misses some true duplicates; the reported overlap is therefore a lower bound (Section 8.5).
-
-**Pairing inside a group.** When a group holds several listings from one publisher (e.g. two from the same Workable board and one from Jooble), listings are ranked within each publisher by posting date, then first-seen date, then `source_record_sk`, and paired rank to rank, which keeps the rule in Section 8.1 deterministic. A simpler rule — leave a group unmerged when it holds two listings from one publisher — was considered and rejected: in the samples, 11% of Workable rows (165 of 1,471) and 16% of SmartRecruiters rows (144 of 908) share title, company and city with another posting on the same board, and every aggregator copy of those postings would stay unmerged.
-
-**Keys.**
-
-- `job_sk` (the opening) is the `source_record_sk` of the opening’s anchor, its earliest listing (earliest first-seen date, ties broken by `source_record_sk`). It stays the same across rebuilds as long as the anchor stays in the same opening. A change to the normalization rules can merge or split groups and so change the anchor, which is why reviewed matches are stored as pairs of `source_record_sk` (Section 8.5), never against a `job_sk`.
-- `posting_sk` is `generate_surrogate_key(['source_name', 'source_job_id'])` of the representative listing (Section 8.4). For every source except Workable it equals that listing’s `source_record_sk`; for Workable it leaves out the city, so the cities of one posting share it.
-
-### 8.4 Survivorship — which value each field takes
-
-When listings match, one listing represents the opening: the one from the first source in `source_priority` (`seed_sources.csv`): Workable → SmartRecruiters → Ashby → Greenhouse (employer-published) → JSearch → Jooble (snippet-only descriptions). Two listings from the same source (two JSearch publishers, say) are ordered by first-seen date, then `source_record_sk`. Each field then follows its own rule:
-
-| **Field**                                                           | **Rule**                                                                                                                                                                       |
-|---------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `posting_sk`, title, description, URLs, `primary_source_sk`         | From the representative listing                                                                                                                                                |
-| `company_sk`, `location_sk`, `job_category`                         | Equal across the opening’s listings, because `company_norm`, `city_std` and `title_norm` are the match key                                                                     |
-| `employment_type`, `experience_level`                               | First known value (not `Unknown`) in `source_priority` order                                                                                                                   |
-| `workplace_type` with `remote_status`                               | Taken as a pair from the first listing in `source_priority` order whose `remote_status` is known, so the two never contradict each other                                       |
-| `salary_text`                                                       | First non-empty value in `source_priority` order                                                                                                                               |
-| `posting_date`                                                      | Earliest posting date of the ATS listings; when there is none, the earliest of any listing. JSearch dates are derived from text such as “10 days ago”, so they are approximate |
-| `first_seen_at` / `last_seen_at`                                    | Earliest / latest across the listings                                                                                                                                          |
-| `industry` (on `dim_company`)                                       | Most frequent value; ties broken by `source_priority`                                                                                                                          |
-| `is_active`                                                         | Employer-board evidence first (Section 7.2)                                                                                                                                    |
-| `listing_count`, per-source counts, `copies_landed`, `source_count` | Counted or summed over the opening’s listings                                                                                                                                  |
-
-Example: an opening whose representative listing is from Workable (no remote signal beyond `telecommuting = false`) and which also appears on JSearch with `job_is_remote = true` takes `remote_status = 'Not remote'` from Workable, because Workable comes first and its value is known.
-
-### 8.5 Measuring matching quality
-
-| **Check**                | **Method**                                                                                                                                                                                                  |
-|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Precision**            | Manual review of 40 randomly sampled merged pairs, drawn by `analyses/match_review_sample.sql` and recorded as `listing_a`, `listing_b` (both `source_record_sk`) and `is_same_job` in `seed_match_review.csv`, so the review survives rebuilds; reported as “X of 40 correct”. **Planned** |
-| **Rule 8.1**             | Singular dbt test: no `job_sk` holds two listings from the same publisher                                                                                                                                   |
-| **Coverage**             | Every listing belongs to exactly one opening: `SUM(fct_jobs.listing_count)` equals the rows of `int_job_listings`                                                                                           |
-| **Independent evidence** | JSearch `job_publisher` and Jooble `underlying_source` sometimes name an ATS (e.g. `smartrecruiters.com`); these listings can be checked for a match. **Planned**, no query yet                                                           |
-| **Recall**               | Cannot be measured without a shared identifier. The reported overlap is a **lower bound**                                                                                                                   |
-
-### 8.6 Risks
-
-| **Risk**                                                               | **Effect**                                                                                                                         | **Mitigation**                                                                                                                                     |
-|------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| Company names differ between sources (Arabic / English, abbreviations) | Missed matches: matching only compares listings of the same company, so an unresolved company blocks all of its jobs from matching | `seed_company_aliases` (742 aliases, 85 in Arabic), reviewed against every company name in the build; names still outside it are listed by `analyses/companies_not_in_seed.sql` |
-| Recruitment agencies post on behalf of clients                         | No match with the client’s own listing; agencies would dominate Q3 and Q7                                                          | `is_recruitment_agency`; Q3 excludes agencies, Q7 is shown with and without them                                                                   |
-| Very generic titles (`"Sales Executive"`)                              | Possible false merges                                                                                                              | Exact match within the same company and city only                                                                                                  |
-
-## 9. Validation against the business questions
-
-“Advertised in the window” below means `first_seen_date_sk <= 20260930` and `last_seen_date_sk >= 20260901` (Section 2).
-
-| **\#** | **Question**                        | **How the model answers it**                                                                                                                                                                                                                                                                                                                                                                                                     |
-|--------|-------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Q1     | Postings advertised, Sep 2026       | `COUNT(DISTINCT posting_sk)` from `fct_jobs`, advertised in the window                                                                                                                                                                                                                                                                                                                                                           |
-| Q2     | Top 10 cities                       | `SUM(job_count)`, advertised in the window, grouped by `dim_location.city` where `location_level = 'city'`, top 10                                                                                                                                                                                                                                                                                                               |
-| Q3     | Top 10 employers                    | Q1 where `dim_company.is_recruitment_agency = false` and `company_sk <> '-1'`, grouped by `company_name`, top 10                                                                                                                                                                                                                                                                                                                 |
-| Q4     | Job categories                      | Q1 grouped by `dim_job_attributes.job_category`                                                                                                                                                                                                                                                                                                                                                                                  |
-| Q5     | Share full-time                     | Q1 split by `dim_job_attributes.employment_type`; full-time ÷ all known types                                                                                                                                                                                                                                                                                                                                                    |
-| Q6     | Share remote                        | Q1 split by `dim_job_attributes.remote_status`; remote ÷ (remote + not remote)                                                                                                                                                                                                                                                                                                                                                   |
-| Q7     | Top experience level per region     | Q1 grouped by `dim_location.region` and `dim_job_attributes.experience_level` (Unknown excluded on both); highest count per region. Run twice: all companies, and `is_recruitment_agency = false`                                                                                                                                                                                                                                |
-| Q8     | New postings per week               | `COUNT(DISTINCT posting_sk)` grouped by `dim_date.week_start_date` on `posting_date_sk`, for posting dates from 1 to 25 September 2026, where `dim_source.source_type = 'ATS'` on `primary_source_sk`. The week starting 30 August covers 1–5 September only, and the week starting 20 September ends at the last employer-board collection on 25 September; both are labelled partial. The week starting 27 September is not reported |
-| Q9     | Median days from posting to removal | `MEDIAN(days_open)` where `is_active = false`, `dim_source.source_type = 'ATS'` on `primary_source_sk`, `last_seen_date_sk` between 20260901 and 20260930, and `posting_date_sk <> -1`                                                                                                                                                                                                                                           |
-
-Q3 as a query on the star:
-
-    select
-        c.company_name,
-        count(distinct f.posting_sk) as job_postings
-    from fct_jobs as f
-    inner join dim_company as c
-        on f.company_sk = c.company_sk
-    where f.first_seen_date_sk <= 20260930
-      and f.last_seen_date_sk >= 20260901
-      and not c.is_recruitment_agency
-      and c.company_sk <> '-1'
-    group by c.company_sk, c.company_name
-    order by job_postings desc
-    limit 10
-
-Power BI connects to the MARTS schema only, and the same measures are written in DAX:
-
-    Job openings     = SUM ( fct_jobs[job_count] )
-    Job postings     = DISTINCTCOUNT ( fct_jobs[posting_sk] )
-    Listings         = SUM ( fct_jobs[listing_count] )
-    Median days open = MEDIAN ( fct_jobs[days_open] )
-
-## 10. Source-to-target mapping
-
-| **Target table**     | **Target column**                         | **Source**                                                                                                                                                                                                | **Logic**                                                                                                                                                                                                                                      |
-|----------------------|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `dim_company`        | `company_name`                            | Ashby: board slug · Workable: `raw_data:name` · Greenhouse: `metadata.Brand`, else `company_name` without “Careers page” · SmartRecruiters: `company.name` · JSearch: `employer_name` · Jooble: `company` | `seed_company_aliases` standard name when listed; otherwise the highest-priority listing’s name                                                                                                                                                |
-| `dim_company`        | `is_recruitment_agency`                   | `seed_company_aliases`                                                                                                                                                                                    | `false` when the company is not in the seed                                                                                                                                                                                                    |
-| `dim_company`        | `industry`                                | Workable `industry` · SmartRecruiters `industry.label`                                                                                                                                                    | Most frequent value per company                                                                                                                                                                                                                |
-| `dim_location`       | `city`, `region`, `location_level`        | `city_raw` (Workable, SmartRecruiters, JSearch, Ashby address) or `location_raw` text (Greenhouse, Jooble, Ashby)                                                                                         | Whole-word lookup in `seed_city_mapping`, city field before location text. The seed also holds region names with an empty city (`al qassim region` → Qassim), so a region-only text is kept at region level; if nothing matches, country level |
-| `dim_job_attributes` | `job_category`                            | `title_raw`, via `title_norm`                                                                                                                                                                             | Whole-word keyword lookup in `seed_job_categories`. The lowest priority wins; ties go to the longer keyword, then to the category name. `Other` when nothing matches (query below)                                                             |
-| `dim_job_attributes` | `employment_type`                         | Ashby `employmentType` · Workable `employment_type` · Greenhouse `metadata['Employment Type']` · SmartRecruiters `typeOfEmployment.label` · JSearch `job_employment_type`                                 | `normalize_employment_type()`; null → Unknown                                                                                                                                                                                                  |
-| `dim_job_attributes` | `workplace_type`                          | Ashby `workplaceType` · SmartRecruiters `location.remote` / `hybrid` · Workable `telecommuting = true` and JSearch `job_is_remote = true` (as Remote)                                                     | Staging’s `workplace_type_raw`; null → Unknown                                                                                                                                                                                                 |
-| `dim_job_attributes` | `remote_status`                           | `workplace_type`, then Ashby `isRemote` · Workable `telecommuting` · JSearch `job_is_remote`                                                                                                              | `workplace_type` first, flags second (query below)                                                                                                                                                                                             |
-| `dim_job_attributes` | `experience_level`                        | Workable `experience` · SmartRecruiters `experienceLevel.label`                                                                                                                                           | `seed_experience_levels` (Section 10.2), joined on `lower(trim(raw value))`; null → Unknown; a value missing from the seed passes through unchanged                                                                                            |
-| `dim_job_posting`    | `description_text`                        | `description_plain` from each staging model                                                                                                                                                               | Decode HTML entities (`&amp;` last), then strip tags, then collapse whitespace                                                                                                                                                                 |
-| `dim_job_posting`    | `salary_text`                             | Jooble `salary` (JSearch’s field is always empty)                                                                                                                                                         | Trimmed text                                                                                                                                                                                                                                   |
-| `dim_source`         | all columns                               | `seed_sources.csv`                                                                                                                                                                                        | One row per source                                                                                                                                                                                                                             |
-| `dim_date`           | `date_sk`                                 | `posting_date_raw`, `first_seen_at`, `last_seen_at`                                                                                                                                                       | `to_char(date, 'YYYYMMDD')::int`; null → `-1`                                                                                                                                                                                                  |
-| `fct_jobs`           | `job_count`                               | `int_jobs_matched`                                                                                                                                                                                        | `1` per `job_sk`                                                                                                                                                                                                                               |
-| `fct_jobs`           | `listing_count`, `listing_count_<source>` | `int_jobs_matched`                                                                                                                                                                                        | `count(*)` and `count_if(source_name = '<source>')` per `job_sk`                                                                                                                                                                               |
-| `fct_jobs`           | `copies_landed`                           | `stg_*.copies_landed`                                                                                                                                                                                     | `sum` per `job_sk`                                                                                                                                                                                                                             |
-| `fct_jobs`           | `source_count`                            | `int_jobs_matched`                                                                                                                                                                                        | `count(distinct source_name)` per `job_sk`                                                                                                                                                                                                     |
-| `fct_jobs`           | `days_open`                               | posting date (Section 8.4), latest `last_seen_at`                                                                                                                                                         | `datediff('day', posting_date, max(last_seen_at))` per `job_sk`; null when there is no posting date                                                                                                                                            |
-| `fct_jobs`           | `is_active`                               | `int_job_listings.is_active`                                                                                                                                                                              | Section 7.2                                                                                                                                                                                                                                    |
-
-The two rules that need more than one line:
-
-    -- int_job_listings: remote_status
-    case
-        when workplace_type = 'Remote' then 'Remote'
-        when workplace_type in ('Hybrid', 'OnSite') then 'Not remote'
-        when is_remote = true then 'Remote'            -- Workable's telecommuting is mapped into is_remote in the union
-        when is_remote = false then 'Not remote'
-        else 'Unknown'
-    end as remote_status
-    -- int_job_listings: one category per listing, deterministic when two categories tie
-    select
-        l.source_record_sk,
-        case
-            when l.title_norm is null then 'Unknown'
-            else coalesce(c.job_category, 'Other')
-        end as job_category
-    from listings as l
-    join {{ ref('seed_job_categories') }} as c           -- no match: coalesce(..., 'Other') in the final select
-        on ' ' || l.title_norm || ' ' like '% ' || c.keyword || ' %'
-    qualify row_number() over (
-        partition by l.source_record_sk
-        order by c.priority, length(c.keyword) desc, c.job_category
-    ) = 1
-
-### 10.1 Changes made in staging (25 September)
-
-| **Model**                  | **Change**                                                                                                    | **Why**                                                                                                                                        |
-|----------------------------|---------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| `stg_jsearch_jobs`         | Add `job_json:job_is_remote::boolean as is_remote`                                                            | Only `true` is kept today (as `workplace_type_raw = 'Remote'`), so a JSearch job marked not remote becomes Unknown and leaves Q6’s denominator |
-| All six `stg_*`            | Add `count(*) over (partition by <model key>) as copies_landed` next to `first_seen_at`, before the `qualify` | Keeps within-source duplicates visible in the marts (Section 12.2)                                                                             |
-| `stg_jsearch_jobs` (tests) | `accepted_values: ['SA']` on `country_raw`                                                                    | Section 12 lists this check, but no test enforces it yet                                                                                       |
-
-### 10.2 Seeds used by the marts
-
-`seed_experience_levels` — raw values observed in staging, mapped to the closed list:
-
-| **Raw value (Workable / SmartRecruiters)** | `experience_level` |
-|--------------------------------------------|--------------------|
-| `Internship`                               | Internship         |
-| `Entry level` / `Entry Level`              | Entry              |
-| `Associate`                                | Associate          |
-| `Mid-Senior level` / `Mid-Senior Level`    | Mid-Senior         |
-| `Director`                                 | Director           |
-| `Executive`                                | Executive          |
-| `Not Applicable`, empty, null              | Unknown            |
-
-`seed_sources` (new) — one row per source; `source_priority` drives survivorship:
-
-| `source_name`     | `source_type` | `collection_method` | `source_priority` |
-|-------------------|---------------|---------------------|-------------------|
-| `workable`        | ATS           | Company board API   | 1                 |
-| `smartrecruiters` | ATS           | Company board API   | 2                 |
-| `ashby`           | ATS           | Company board API   | 3                 |
-| `greenhouse`      | ATS           | Company board API   | 4                 |
-| `jsearch`         | Aggregator    | Query matrix API    | 5                 |
-| `jooble`          | Aggregator    | Query matrix API    | 6                 |
-
-## 11. ELT build steps and load order
-
-| **Step**                               | **Implementation**                                                                                                                                                                                                 | **Status**                                                                |
-|----------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| 1\. Stage source data                  | `stg_*` — one model per source: rename, cast, flatten, deduplicate within source, enforce Saudi scope                                                                                                              | ✅ Built, including the additions in Section 10.1                         |
-| 2\. Join and filter records            | `int_job_listings` — `union all` of the six staging models on one shared column list, written out so each source’s own columns (Greenhouse brand, Workable telecommuting, JSearch publisher) are mapped explicitly | ✅ Built |
-| 3\. Business rules and standardization | `int_job_listings` — HTML cleaning; city, region, category, company and experience through seeds; `publisher`, `remote_status`, `posting_sk` | ✅ Built |
-| 4\. Matching and survivorship          | `int_jobs_matched` — `job_sk` and the representative listing; `int_job_openings` — survivorship, once (Section 8) | ✅ Built |
-| 5\. Load dimension tables              | The six `dim_*` | ✅ Built |
-| 6\. Load fact table                    | `fct_jobs` | ✅ Built |
-| 7\. Data quality checks                | `dbt build`: 182 tests at every layer, policy in `dbt/DATA_QUALITY.md`; `analyses/model_checks.sql` and `analyses/pipeline_audit.sql` | ✅ 202 pass, 1 warning (one empty normalized title) |
-| 8\. Hand-over                          | Marts exported to `final_datasets/` as CSV with a README: columns, row counts, generation date | ✅ README; CSVs being added |
-| 9\. Export to ADLS                     | `dbt run-operation export_marts`: the seven marts unloaded as Parquet to `curated/<table>/export_date=YYYY-MM-DD/`, one file per table per run | ✅ Runs as the last pipeline step |
-
-Load order:
-
-    raw_* --> stg_* --> int_job_listings --> int_jobs_matched --> dim_* --> fct_jobs
-                              ^
-           seed_city_mapping -+
-         seed_job_categories -+
-        seed_company_aliases -+
-      seed_experience_levels -+
-                seed_sources -+
-
-Each layer builds into its own schema, so Power BI can be limited to MARTS. The intermediate models are tables, because every mart reads the matching result:
-
-    # dbt_project.yml
-    models:
-      job_pipeline:
-        staging:
-          +materialized: view
-          +schema: staging
-        intermediate:
-          +materialized: table
-          +schema: intermediate
-        marts:
-          +materialized: table
-          +schema: marts
-
-A `generate_schema_name` macro keeps the exact names (`STAGING`, `INTERMEDIATE`, `MARTS`) on the `prod` target and on every other one; seeds build into SEEDS. Prefixing the names with the developer’s schema on non-prod targets was not used: the dev target schema is already STAGING, so it would give STAGING_STAGING and STAGING_MARTS.
-
-## 12. Data quality checks
-
-Data quality is tested at every layer and shown from the star (Section 12.2).
-
-| **Check type**        | **Check**                                                                                                                                | **Layer**    | **Status**                           |
-|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------|--------------|--------------------------------------|
-| Row count             | RAW → staging counts per source recorded (Section 12.1)                                                                                  | staging      | ✅                                   |
-| Duplicate             | `unique` on every staging key; Workable on shortcode + city                                                                              | staging      | ✅                                   |
-| Null                  | `not_null` on keys, `ingest_date`, `is_active`; warning on titles                                                                        | staging      | ✅                                   |
-| Accepted values       | `employment_type`, `workplace_type_raw`, `country_raw`                                                                                   | staging      | ✅                                   |
-| Scope                 | Saudi-only filter on Ashby (country field) and Greenhouse (location keywords); `country_raw = 'SA'` on JSearch                           | staging      | ✅ (JSearch test added 25 September) |
-| Business rule         | `first_seen_at <= last_seen_at`                                                                                                          | staging      | ✅ Tested on two snapshots           |
-| Seeds                 | `unique` / `not_null` on every seed key; `accepted_values` on `experience_level`                                                         | seeds        | ✅                                   |
-| Row count             | `int_job_listings` rows = sum of the six staging models                                                                                  | intermediate | ✅                                   |
-| Duplicate             | `unique` / `not_null` on `source_record_sk` in `int_job_listings` and `int_jobs_matched`                                                 | intermediate | ✅                                   |
-| Matching              | No `job_sk` holds two listings from the same publisher                                                                                   | intermediate | ✅                                   |
-| Primary key           | `unique` / `not_null` on the key of `fct_jobs` and of every dimension                                                                    | marts        | ✅                                   |
-| Grain                 | `posting_sk` + `location_sk` unique in `fct_jobs`                                                                                        | marts        | ✅                                   |
-| Referential integrity | `not_null` and `relationships` on every foreign key of `fct_jobs`                                                                        | marts        | ✅                                   |
-| Unknown member        | Exactly one Unknown row in every dimension                                                                                               | marts        | ✅                                   |
-| Accepted values       | `source_type`, `location_level`, `employment_type`, `workplace_type`, `remote_status`, `experience_level`, `status_basis` (no test on `job_category`) | marts | ✅ |
-| Reconciliation        | `SUM(listing_count)` = rows of `int_job_listings`; the six per-source counts add up to `listing_count`; `copies_landed >= listing_count` | marts        | ✅                                   |
-| Business rule         | `days_open >= 0` when not null; `first_seen_date_sk <= last_seen_date_sk`                                                                | marts        | ✅                                   |
-| Text                  | `description_text` holds no HTML tag or entity (`<p>`, `&lt;`, `&amp;`) | intermediate (`int_job_listings`) | ✅ warning only |
-
-Excerpt of the marts tests (dbt 1.10+ syntax, as in `seeds/schema.yml`):
-
-    models:
-      - name: fct_jobs
-        data_tests:
-          - dbt_utils.unique_combination_of_columns:
-              arguments:
-                combination_of_columns:
-                  - posting_sk
-                  - location_sk
-        columns:
-          - name: job_sk
-            data_tests:
-              - unique
-              - not_null
-          - name: posting_sk
-            data_tests:
-              - not_null
-              - relationships:
-                  arguments:
-                    to: ref('dim_job_posting')
-                    field: posting_sk
-          - name: days_open
-            data_tests:
-              - dbt_utils.accepted_range:
-                  arguments:
-                    min_value: 0
-      - name: dim_company
-        columns:
-          - name: company_sk
-            data_tests:
-              - unique
-              - not_null
-              - has_one_unknown_member
-
-`has_one_unknown_member` is a small generic test (`dim_date` passes `unknown_value: -1`):
-
-    -- tests/generic/has_one_unknown_member.sql
-    {% test has_one_unknown_member(model, column_name, unknown_value="'-1'") %}
-    select count(*) as unknown_rows
-    from {{ model }}
-    where {{ column_name }} = {{ unknown_value }}
-    having count(*) <> 1
-    {% endtest %}
-
-### 12.1 Pipeline audit — RAW to staging
-
-Recorded 2026-09-26 with `analyses/pipeline_audit.sql`, after the third ATS collection and the aggregator re-run. RAW rows count every landed copy of every posting across all collections. Dates are the `ingest_date` partitions (UTC); a campaign that ran past midnight UTC spans two of them.
-
-| **Source**      | **Landed files** | **Partitions** | **RAW rows** | **Out of scope** | **Within-source duplicates** | **Staging rows** |
-|-----------------|------------------|----------------|--------------|------------------|------------------------------|------------------|
-| Ashby           | 31               | 3              | 139          | 3                | 87                           | 49               |
-| Greenhouse      | 51               | 3              | 527          | 24               | 286                          | 217              |
-| SmartRecruiters | 42               | 3              | 2,734        | 0                | 1,790                        | 944              |
-| Workable        | 33               | 3              | 4,429        | 0                | 2,894                        | 1,535            |
-| Jooble          | 821              | 3              | 15,010       | 0                | 6,082                        | 8,928            |
-| JSearch         | 367              | 4              | 3,283        | 0                | 1,179                        | 2,104            |
-| **Total**       | **1,345**        |                | **26,122**   | **27**           | **12,318**                   | **13,777**       |
-
-Out of scope: non-Saudi postings (24 from the unfiltered Greenhouse files of 2026-09-09, 3 on Ashby). Duplicates: the same posting in several collections, on two boards, or returned by overlapping queries. One JSearch page failed and is kept in RAW.
-
-Status of the staged listings after the latest collection:
-
-| **Source**      | **Staged** | **Active** | **Disappeared** |
-|-----------------|------------|------------|-----------------|
-| Ashby           | 49         | 44         | 5               |
-| Greenhouse      | 217        | 171        | 46              |
-| SmartRecruiters | 944        | 909        | 35              |
-| Workable        | 1,535      | 1,479      | 56              |
-| Jooble          | 8,928      | —          | —               |
-| JSearch         | 2,104      | —          | —               |
-
-— Aggregator listings have no status (`is_active` is null, Section 7.2).
-
-ATS active counts equal the Saudi postings each extraction script collected on 2026-09-25. The 142 disappeared ATS listings are the input of Q9, which counts 141 openings after matching.
-
-This section is the single source of these numbers; `analyses/pipeline_audit.sql` re-creates them after every collection.
-
-### 12.2 Quality measures from the star
-
-Version 1 proposed an optional `mart_pipeline_quality` table outside the star. It is dropped: the quality page reads `fct_jobs` and its dimensions like every other page, and MARTS keeps a single fact table.
-
-| **Quality question**                                                              | **Measure**                                                                                                                                                                                 |
-|-----------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| How many landed copies repeated a listing (later snapshots, overlapping queries)? | `SUM(copies_landed) − SUM(listing_count)`                                                                                                                                                   |
-| How many listings did matching merge into another listing’s opening?              | `SUM(listing_count) − SUM(job_count)`                                                                                                                                                       |
-| How many openings were found on more than one source?                             | `SUM(job_count)` where `source_count > 1`                                                                                                                                                   |
-| What does each source contribute, and how much of it is also found elsewhere?     | `SUM(listing_count_<source>)`, split by `source_count = 1` or `> 1`                                                                                                                         |
-| How complete is each attribute?                                                   | Share of openings on an Unknown value — `company_sk = '-1'`, `location_level <> 'city'`, `employment_type`, `remote_status`, `experience_level`, `posting_date_sk = -1` — by primary source |
-| How fresh is the data?                                                            | Latest last-seen date by primary source                                                                                                                                                     |
-| How many openings were taken down?                                                | `SUM(job_count)` where `is_active = false` (employer board only)                                                                                                                                |
-
-Figures that exist only before the marts — RAW rows, failed pages, out-of-scope rows — stay in the audit (Section 12.1).
-
-### 12.3 Reconciliation of the layers
-
-`analyses/model_checks.sql` checks that every layer adds up. On the 26 September build all 16 checks pass:
-
-| **Check**                                                        | **Value**       |
-|------------------------------------------------------------------|-----------------|
-| Staging rows = `int_job_listings` rows = `int_jobs_matched` rows | 13,777          |
-| Distinct `job_sk` = `int_job_openings` rows = `fct_jobs` rows    | 13,163          |
-| One representative listing per opening                           | 13,163          |
-| `SUM(listing_count)` and the six per-source counts               | 13,777          |
-| `SUM(copies_landed)` in the fact = in the listings               | 26,095          |
-| Postings in the fact = `dim_job_posting` rows (without Unknown)  | 12,711          |
-| Openings with negative `days_open`                               | 0               |
-| Unknown member in each of the six dimensions                     | 1 each          |
-
-## 13. Design decisions
-
-| **Decision**                                             | **Reason**                                                                                                                                                                                |
-|----------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| One fact table, `fct_jobs`                               | One grain answers every business question and the quality page. Listing-level lineage stays in `int_jobs_matched`; a second fact or a bridge table would add joins without adding answers |
-| Grain: a job posting in one location                     | Workable publishes a multi-city posting as one listing per city; keeping the city makes city rankings right, and a distinct count of `posting_sk` still counts each posting once          |
-| `dim_job_posting` at posting grain                       | Keeps long text out of the fact. One posting has one or more openings, so it is a real one-to-many dimension, not a copy of the fact’s key                                                |
-| `job_category` in the junk dimension                     | A dimension with one column is an attribute, not a dimension (version 1’s `dim_role`)                                                                                                     |
-| Per-source listing counts on the fact                    | Show source coverage and overlap from the one fact. The six sources are fixed; a seventh would add one column                                                                             |
-| Accumulating snapshot                                    | One row per opening for its whole life, with its dates as columns; enough for questions over one month                                                                                    |
-| Employer-board evidence decides `is_active`              | A board’s file lists every open job; an aggregator copy must not keep open a job that was gone from its board, and an aggregator-only opening has no status                                            |
-| ATS posting date first                                   | Employers publish exact dates; JSearch derives dates from text such as “10 days ago”                                                                                                      |
-| Hybrid counts as not remote                              | The same answer for Ashby and SmartRecruiters; Q6 asks about fully remote jobs                                                                                                            |
-| A stated period and unit in every question               | Each question has one correct, checkable answer                                                                                                                                           |
-| One idea per question                                    | Each question maps to one measure and one grouping, so each result is a single number or ranking                                                                                          |
-| Closed vocabularies through seeds                        | Experience levels, categories, companies, cities and sources are reviewable in Git, and an unmapped value fails a test instead of passing silently                                        |
-| Surrogate keys from `dbt_utils.generate_surrogate_key()` | Source IDs collide across sources                                                                                                                                                         |
-| `job_sk` anchored on the earliest listing                | Stable while the anchor stays in its opening; reviewed matches are stored by `source_record_sk`, which never changes                                                                      |
-| Exact matching only                                      | Fuzzy similarity merged different seniority levels of the same role; a lower-bound overlap is preferred to false merges                                                                   |
-| Never merge within a publisher; pair rank to rank        | Keeps an employer’s own duplicate-looking postings apart, while still merging their aggregator copies                                                                                     |
-| Q9 on ATS evidence only                                  | Only an employer board shows that a posting was taken down                                                                                                                                |
-| Unknown member in every dimension                        | No null foreign keys; missing values are visible in reports                                                                                                                               |
-| Type 1 dimensions                                        | Sufficient for this scope; the lifecycle lives on the fact’s dates                                                                                                                        |
-| One schema per layer; intermediate as tables             | Power BI reads MARTS only; matching runs once per build                                                                                                                                   |
-
-## 14. Known limitations
-
-- **Cross-source overlap is a lower bound.** Exact matching misses some duplicates, and recall cannot be measured without a shared identifier.
-- **Partial field coverage.** Experience level exists only in Workable and SmartRecruiters (about 14% of listings: 1,792 with a known level), so Q7 describes those sources’ postings. Jooble has no posting date, employment type or workplace signal; Greenhouse has no workplace signal.
-- **Recruitment agencies advertise for clients.** Eram Talent (over half of Workable) and Jobs for Humanity (over half of SmartRecruiters) are flagged and excluded from Q3, but their postings count in every other question. In the samples they hold 785 of the 1,446 postings with a known experience level (54%), so Q7 is shown with and without agencies.
-- **Aggregators were collected as one campaign (9–12 September) plus one general query on 26 September.** JSearch’s latest posting date in the campaign is 10 September, so Q8 uses ATS sources only. Aggregator-only openings have no active/taken-down status (Section 7.2).
-- **The last employer-board collection was on 25 September (UTC).** A job posted after it was never observed, so the week starting 20 September is partial in Q8 and later weeks are not reported.
-- **Very old postings.** ATS postings date back to 2018 (SmartRecruiters) and 2024 (Workable); the median posting was 94–137 days old when first collected. Q9 therefore reports the median.
-- **About 20% of titles are uncategorized** because they are generic (`Specialist`, `Supervisor`). Ties between two categories of equal priority are resolved by keyword length, then name: 48 of the 2,832 sampled titles (1.7%) tie, most between Engineering and Operations (e.g. `Planning Engineer`).
-- **Arabic text.** The category seed has no Arabic keyword, so all 24 Arabic-only titles in the samples fall into `Other`; the company seed has 85 Arabic aliases, but an Arabic company name not in it matches only the same Arabic name; and titles are not translated, so an Arabic listing matches only the same Arabic title. About 20 Arabic keywords (e.g. محاسب، مهندس، ممرض، مبيعات) are planned.
-- **Multi-city text.** A listing that names several Saudi cities in one text is assigned the first one; the others are not counted separately (2 of 47 Ashby listings in the samples).
-- **Source data errors.** Some SmartRecruiters postings carry a Saudi country code with a city of Warsaw, Paris or New York, and a JSearch posting has `job_city = "Huntersville"` with `job_country = "SA"`; they appear at country level.
-- **Geographic filtering at extraction.** Ashby, Workable and Greenhouse were filtered to Saudi postings before landing, so a posting whose primary location is abroad but lists a Saudi city as a secondary location was not collected.
-- **Closed or deleted cannot be told apart.** No source reports a posting’s status; the model records only that it disappeared (Section 7.2), and only ATS disappearances are used.
-- **The removal date is approximate** to within the gap between two collections.
-- **New-opening trends only see jobs still open when collected.** A job posted and removed before our first collection was never observed, so Q8 is limited to September 2026.
-- **Greenhouse files landed on 2026-09-09 were not filtered at extraction.** The scope filter in `stg_greenhouse_jobs` removed 24 non-Saudi postings.
-- **The first snapshot’s folder dates were set by hand at upload.** `first_seen_at` for those postings depends on the folder date being correct.
-- **Jooble descriptions are snippets**, not full descriptions.
-- **Salary is text only.** No employer-board payload we collect has a salary field (Ashby’s is switched off by `includeCompensation=false`), JSearch’s is always empty, and Jooble’s is mostly empty free text. It is shown as `salary_text`, not analysed.
-- **Skills and technologies are not extracted.** A later extension would add `seed_skills` (keyword → skill), `dim_skill`, and a bridge table `bridge_posting_skill` (`posting_sk`, `skill_sk`), matched on ATS descriptions only, since Jooble gives snippets.
-
-## 15. Build status
-
-As of the 26 September build (`run_id 20260926T200419Z`).
-
-| **Object** | **Status** |
-|------------|------------|
-| `stg_*` (6) | ✅ Built on three ATS collections and two aggregator runs; all tests pass |
-| Seeds (5) | ✅ Loaded and tested. `seed_city_mapping` 219 aliases (region names unified, e.g. `Hail`); `seed_company_aliases` 742 (reviewed 26 September); `seed_job_categories` 171; `seed_experience_levels` 7; `seed_sources` 6 |
-| Macros | ✅ `normalize_text`, `normalize_title`, `normalize_company`, `strip_html`, `normalize_employment_type` (combined values such as `Full-time and Part-time` added 26 September), `generate_schema_name`, `load_raw`, `export_marts` |
-| `int_job_listings`, `int_jobs_matched`, `int_job_openings` | ✅ Built: 13,777 listings, 13,163 openings |
-| `dim_job_posting`, `dim_company`, `dim_location`, `dim_date`, `dim_source`, `dim_job_attributes` | ✅ Built: 12,712, 1,754, 56, 3,001, 7 and 399 rows (each with its Unknown member) |
-| `fct_jobs` | ✅ Built: 13,163 rows |
-| Tests | ✅ 182 data tests; 203 nodes: 202 pass, 1 warning (one listing whose title normalizes to empty). Added after the external review: `assert_ats_latest_pull_not_collapsed`, and `is_active` known exactly when `status_basis = 'employer board'` |
-| Pipeline runner | ✅ `pipeline/run_pipeline.py`: extract, upload, load, freshness, build, export; every run logged in `run_log.csv` |
-| ADLS `curated/` | ✅ Seven Parquet files per export, under `export_date=` partitions |
-| `final_datasets/` | ✅ README and the seven MARTS tables as CSV (run `20260926T200419Z`) |
-| Roles | ✅ `snowflake/roles_and_grants.sql`: `JOB_PIPELINE_DEV` for dbt, `JOB_PIPELINE_REPORTER` read-only on MARTS for Power BI (checked: STAGING not visible) |
-| Aggregator status | ✅ Null for aggregator-only openings (Section 7.2). Repeating the campaign would add listings, not status |
-
-## 16. Changes from version 1
-
-### Changes in version 2.1 (26 September)
-
-- Numbers updated to the 26 September build: third ATS collection (25 September) and an aggregator general-query re-run (26 September).
-- Section 7.2: `is_active` is null for openings found on aggregators only; `status_basis` added to Section 7.1.
-- External review (26 September): collapse guard for ATS pulls, freshness errors stop the run, roles script, profile template, quality policy (`dbt/DATA_QUALITY.md`); 15 document/code differences corrected (dates, Ashby boards, `dim_date`, `location_label`, check statuses, SQL excerpts).
-- Q8 now covers posting dates to 25 September (no ATS posting is dated 25 September, so the weekly counts are unchanged); Q7 leaves out regions with fewer than 20 postings of known level.
-- Section 12.1 re-recorded; Section 12.3 (layer reconciliation) and Section 17 (results) added.
-- Sections 11 and 15: build status updated; export of the marts to ADLS `curated/` added as step 9.
-- Employment type: combined values (`Full-time and Part-time`) kept as their own value.
-- Company seed expanded from 37 to 742 aliases (Section 6): merges, agencies and job boards, placeholders, Arabic spellings. Openings fell from 13,255 to 13,163, because listings of one company under different names now match; `dim_company` fell from 1,939 to 1,754 rows. The Unknown company is displayed as “Employer not disclosed”.
-
-### Version 2 compared with version 1
-
-| **Area**                   | **Version 1**                                                                                                                        | **Version 2**                                                                                              | **Reason**                                                                     |
-|----------------------------|--------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
-| Fact table                 | `fct_jobs`                                                                                                                           | `fct_jobs`, still the only fact, now with `posting_sk`, listing counts, `copies_landed` and `source_count` | One fact answers the business and the quality questions                        |
-| What Q1 counts             | Rows (a posting × a city), called unique openings                                                                                    | `COUNT(DISTINCT posting_sk)`; rows are openings                                                            | Workable sample: 1,029 postings, 1,471 listings                                |
-| `dim_role`                 | A dimension with one column                                                                                                          | Removed; `job_category` moved to `dim_job_attributes`                                                      | A one-column dimension is an attribute                                         |
-| `dim_job_posting`          | 1:1 with the fact                                                                                                                    | One row per posting, one-to-many                                                                           | The cities of one posting share its text                                       |
-| `is_active`                | Active if any listing is active                                                                                                      | Employer-board evidence first                                                                              | Aggregator copies kept closed jobs open and out of Q9                          |
-| `remote_status`            | From the remote flags                                                                                                                | `workplace_type` first, then the flags; Hybrid is Not remote                                               | Ashby sends Hybrid with `isRemote = true` (4 of 47 sampled listings)           |
-| JSearch remote flag        | Only `true` kept in staging                                                                                                          | `is_remote` boolean added                                                                                  | `false` became Unknown                                                         |
-| Posting date               | Earliest across listings                                                                                                             | ATS date first                                                                                             | JSearch dates are approximate                                                  |
-| Category ties              | Lowest priority wins, no tie-break                                                                                                   | Then the longer keyword, then the name                                                                     | 48 of 2,832 sampled titles tie                                                 |
-| Unmapped experience values | Said to fail a test, but mapped to Unknown                                                                                           | Pass through, so the test fails                                                                            | New values stay visible                                                        |
-| HTML                       | `strip_html()`                                                                                                                       | Decode entities, strip tags, collapse whitespace; tested                                                   | Greenhouse sends `&lt;p&gt;`                                                   |
-| `mart_pipeline_quality`    | Optional table outside the star                                                                                                      | Removed; quality measures come from `fct_jobs`                                                             | One fact; Power BI reads MARTS only                                            |
-| `dim_source`               | Values with no upstream                                                                                                              | `seed_sources.csv`, with `source_priority`                                                                 | Reviewable and testable                                                        |
-| Marts tests                | `relationships`, `accepted_values`, business rules                                                                                   | Plus primary keys, foreign keys `not_null`, grain, Unknown member, reconciliation, HTML                    | `unique` and `not_null` on every primary key                                   |
-| Schemas                    | One schema for every layer                                                                                                           | STAGING, INTERMEDIATE, MARTS; intermediate as tables                                                       | Power BI limited to MARTS                                                      |
-| Q7, Q8, Q9                 | —                                                                                                                                    | Q7 with and without agencies; partial weeks marked in Q8; Q9 per opening after matching                    | Agencies hold 54% of Q7’s base in the samples; last collection on 24 September |
-| Corrected statements       | Company seed “covers Arabic and English spellings”; “no ATS source has a salary field”; `job_sk` “does not change” when rules change | Corrected in Sections 6, 2 and 8.3                                                                         | Not supported by the seed, the extraction script or the matching rules         |
-| Scope                      | Skills not mentioned                                                                                                                 | Declared out of scope, with an extension path                                                              | The brief lists skills and technologies                                        |
-
-## 17. Results (26 September build)
-
-From `analyses/business_questions.sql`. None of Q1–Q9 uses aggregator status (Section 7.2).
-
-| **Question** | **Result** |
-|--------------|------------|
-| Q1 | 12,711 unique job postings, 13,163 job openings |
-| Q2 | Riyadh 6,571 · Jeddah 1,400 · Dammam 1,042 · Al Khobar 726 · Jubail 717 · Makkah 446 · Dhahran 366 · Madinah 349 · Umluj 226 · Yanbu 168 |
-| Q3 (agencies and job boards excluded) | Qiddiya Investment Company 392 · AccorHotel 344 · JASARA PMC 217 · AtkinsRéalis 195 · Marriott 169 · Aramco Overseas Company 155 · WSP 107 · Lucid Motors 106 · BEC Arabia 97 · Tawantech 96 |
-| Q4 | Other 2,405 · Construction & Trades 1,810 · Engineering 1,211 · Management 1,127 · Sales & Business Development 1,079 (19 categories, plus 1 Unknown) |
-| Q5 | 92.1% full-time (3,442 of 3,739 postings with a known type) |
-| Q6 | 2.3% fully remote (94 of 4,096 postings with a known status) |
-| Q7 | All companies: Mid-Senior leads in Riyadh (497 of 899) and the Eastern Province (158 of 281); Entry in Makkah (102 of 253), Tabuk (102 of 181) and Madinah (31 of 51). Without agencies: Mid-Senior in Riyadh (205 of 393) and Makkah (36 of 124), Entry in Tabuk (67 of 139), Associate in the Eastern Province (12 of 25). Regions with fewer than 20 postings of known level are left out |
-| Q8 (ATS only) | Weeks from 30 Aug: 71 (partial) · 120 · 118 · 100 (partial), posting dates 1–25 September |
-| Q9 (ATS only) | 141 openings taken down; median 37 days from posting to last seen (mean 55.5, for reference) |
-
-Quality measures on the same build (`analyses/model_checks.sql`, all 16 reconciliation checks pass):
-
-| **Measure** | **Result** |
-|-------------|------------|
-| Openings found on more than one source | 518 of 13,163 (3.9%): 503 on two sources, 15 on three |
-| Status (Section 7.2) | Employer board: 2,596 active, 141 taken down · Aggregator query: 10,426 without a status (Jooble 8,407, JSearch 2,019) |
-| Share of openings with an Unknown value | Company 17.3% · city 3.4% · employment type 69.2% · remote status 65.4% · experience level 86.4% · posting date 65.2% · category `Other` 18.7% |
+| **Key**      | **Rules**                                                                                                                                                                                                                                     | **Example**                                                                          |
+|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| title_norm   | Lower-case; bracketed notes and punctuation removed; sr, jr, mgr expanded to senior, junior, manager; hiring noise (urgent, hiring, required, saudi nationals) and location words (ksa, saudi arabia, riyadh, jeddah, dammam, khobar) removed | "Senior Oil & Gas Safety Officer (Saudi National)" → "senior oil gas safety officer" |
+| company_norm | Employer entity resolution, section 6 (dim_company); null for undisclosed employers                                                                                                                                                           | "Qiddiya Investment Company" and "Qiddiya" → one key once the alias is in the seed   |
+| city_std     | seed_city_mapping on the city field, else on the location text; null when the text names several cities                                                                                                                                       | جدة, Jiddah → Jeddah; "Riyadh or Jeddah" → no city                                   |
+
+### 8.3 Blocking
+
+Candidates are compared only inside a block of the same company_norm and the same city_std. Comparing all 13,777 listings pairwise would mean about 95 million pairs. A listing with no company, no city (region or country level only), or no title key is never matched and stays a job of its own.
+
+### 8.4 Matching tiers
+
+1\. **Exact tier (int_listing_groups):** listings with the same title_norm, company_norm and city_std form one group, under the publisher rule.
+
+2\. **Fuzzy candidates (int_match_candidates):** pairs of exact groups inside one block whose titles differ, that share no publisher, and whose titles carry the same level words (intern, internship, trainee, apprentice, assistant, associate, junior, senior, lead, head, principal, manager, director, chief, deputy, vice). Both scores are stored: Jaccard on title words and Jaro-Winkler, 0 to 100. Pairs where both scores are below 50 are dropped to keep the table small.
+
+3\. **Fuzzy tier (int_jobs_matched):** a candidate pair is merged when the chosen score reaches the threshold and each group is the other's best candidate; ties go to the higher score, then the closer first seen dates, then the group key.
+
+A best match is one to one, so groups are joined in pairs and a chain of matches cannot form. Together with the no-shared-publisher condition, two postings of one publisher never end in one job by construction; a test checks it as well.
+
+The fuzzy tier is off while fuzzy_match_threshold is null, so on 2026-09-27 every merge is exact. The score and its threshold are chosen from labelled pairs (section 8.7). A test build showed why labels are needed: Jaro-Winkler scored different Qiddiya jobs that share the prefix "Assistant Manager -" at 86 to 93 ("Assets Infrastructure Delivery" and "Asset Infrastructure Design": 93), while their Jaccard score stayed at 43 or below.
+
+### 8.5 Job key
+
+job_sk is the source_record_sk of the earliest-seen listing in the job; ties go to the lower source_record_sk. Later listings do not move the key, so labelled samples and stored references keep pointing to the same job across runs.
+
+### 8.6 Survivorship
+
+One listing represents the job, chosen by source_priority, then first seen, then source_record_sk: Workable → SmartRecruiters → Ashby → Greenhouse → JSearch → Jooble. Each field then follows its own rule, applied once in int_job_openings:
+
+| **Field**                                                         | **Rule**                                                                          |
+|-------------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| posting, source, company, location, job_category, job_title, URLs | Representative listing                                                            |
+| description_text                                                  | Longest cleaned description; ties go to the better priority                       |
+| employment_type                                                   | First known value by priority                                                     |
+| experience_level                                                  | A level from the source field before one from a title rule, then priority         |
+| workplace_type and remote_status                                  | Taken as a pair from the first listing, by priority, whose remote status is known |
+| Salary (text and every parsed field)                              | Taken together from the first listing, by priority, that has a salary text        |
+| posting_date                                                      | Earliest employer-board posting date, else the earliest of any listing            |
+| first seen, last seen                                             | Minimum and maximum across listings                                               |
+| lifecycle                                                         | Section 7.1                                                                       |
+| industry (dim_company)                                            | Most frequent value; ties go to the higher-priority source                        |
+
+### 8.7 Evaluation and threshold
+
+1\. Run analyses/fuzzy_review_sample: up to 10 candidate pairs from every 10-point band of each score, from 50 to 100.
+
+2\. Label each pair in seeds/seed_match_review.csv (listing_a, listing_b, is_same_job, reviewer) and load it with dbt seed.
+
+3\. Run analyses/match_threshold_evaluation: precision and in-sample recall for every threshold from 50 to 100, for both scores.
+
+4\. Set fuzzy_match_function and fuzzy_match_threshold, rebuild, and report the threshold with its precision, recall, and number of labelled pairs.
+
+The listing that stands for each group in a review is chosen with a unique tie-break, so listing_a and listing_b are the same on every build and the labels keep joining. Verified on 2026-09-27: two builds of int_match_candidates gave identical fingerprints.
+
+**Result on 2026-09-27:** 13,777 listings; 12,594 single-listing jobs; 570 jobs merged by the exact tier from 1,183 listings; 8,826 fuzzy candidate pairs waiting for the labelled sample.
+
+## 9. Tests
+
+Every rule in this model has a dbt test, so a run that breaks a rule fails instead of producing wrong numbers.
+
+| **Test**                                  | **Applies to**                                                                                                                                                                                                                                            |
+|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| unique, not_null                          | Every primary key: job_sk, posting_sk, every dimension key; source_record_sk in every intermediate model                                                                                                                                                  |
+| unique_combination_of_columns (dbt_utils) | job_sk + skill_sk in bridge_job_skill; posting_sk + location_sk in fct_jobs; source_name + board + pull_date in int_board_pulls; source_name + week_start_date in int_source_weeks; the two groups of a candidate pair                                    |
+| relationships                             | Every foreign key of fct_jobs and bridge_job_skill to its dimension, including each date role                                                                                                                                                             |
+| accepted_values                           | lifecycle_status, status_basis, location_level, employment_type, workplace_type, remote_status, experience_level, experience_level_basis, salary_currency, salary_period, description_basis, match_tier, matched_in                                       |
+| has_one_unknown_member (custom)           | Every dimension has exactly one Unknown member                                                                                                                                                                                                            |
+| Every listing kept (custom)               | Listings equal the six staging models; matching keeps every listing; fct_jobs reconciles with the listings                                                                                                                                                |
+| Publisher rule (custom)                   | No job holds two postings of one publisher                                                                                                                                                                                                                |
+| One representative per job (custom)       | Exactly one representative listing in every job                                                                                                                                                                                                           |
+| Fuzzy merges keep level words (custom)    | No fuzzy merge joins titles with different level words                                                                                                                                                                                                    |
+| Lifecycle consistency (custom)            | A job is open on its first day; disappeared_date is set exactly when the job disappeared, and after its last sighting; a baseline or aggregator-only job has no opening date and every other job has one; no job is open after the latest successful pull |
+| Location and salary (custom)              | A text naming several cities gets no city; salary amounts are positive, the minimum is not above the maximum, and a monthly SAR value exists exactly when the period converts                                                                             |
+| RAW to staging (custom)                   | RAW reconciles with staging; the latest pull of each ATS source holds at least half the postings of the one before, so a collapsed pull fails the build                                                                                                   |
+
+**Results on 2026-09-27.** Full build: 274 passed, 1 warning, 0 errors. The warning is one Jooble listing titled "(Accountant)": removing bracketed notes empties its title key, so it stays a job of its own (section 12). Idempotency: two builds on the same data gave identical hash_agg fingerprints for every intermediate table and fct_jobs.
+
+## 10. Data quality report
+
+The reliability questions become this report. It is produced on every build by the tests in section 9 and three analyses: intermediate_checks (the intermediate layer), pipeline_audit (RAW to staging), and model_checks (the marts).
+
+| **\#** | **Measure**                                                                                             | **Produced by**                                 |
+|--------|---------------------------------------------------------------------------------------------------------|-------------------------------------------------|
+| DQ1    | Listings collected, per source                                                                          | pipeline_audit                                  |
+| DQ2    | Records removed from RAW to staging, with the reason                                                    | pipeline_audit                                  |
+| DQ3    | Unique jobs after cross-source matching, by match tier                                                  | intermediate_checks                             |
+| DQ4    | Share of jobs published on more than one source                                                         | model_checks                                    |
+| DQ5    | Fuzzy candidate pairs, and matching precision in the labelled sample                                    | intermediate_checks, match_threshold_evaluation |
+| DQ6    | Share of listings each standardisation resolved (location level, experience level basis, salary parsed) | intermediate_checks                             |
+| DQ7    | Pulls that failed, and sources fully pulled in each week                                                | intermediate_checks                             |
+| DQ8    | Jobs by lifecycle status; baseline jobs and new openings                                                | intermediate_checks                             |
+| DQ9    | Skill coverage among jobs with a full description                                                       | intermediate_checks                             |
+| DQ10   | Company spellings not yet in the alias seed                                                             | companies_not_in_seed                           |
+
+### 10.1 Results of the build of 2026-09-27
+
+| **Check**                                                | **Value**             | **Expected**                             |
+|----------------------------------------------------------|-----------------------|------------------------------------------|
+| Listings = sum of the six staging models                 | 13,777                | 13,777                                   |
+| Jobs: single / exact / fuzzy                             | 12,594 / 570 / 0      | fuzzy 0 while the threshold is null      |
+| Fuzzy candidate pairs                                    | 8,826                 | Input to the labelled sample             |
+| Listings at city / region / country level                | 13,331 / 185 / 261    | City for most                            |
+| Listings naming several cities                           | 5                     | A handful                                |
+| Jobs by experience level basis: source / title / unknown | 1,791 / 3,457 / 7,916 | Title adds coverage                      |
+| Salary texts / parsed                                    | 283 / 283             | Equal                                    |
+| Jobs by lifecycle: open / disappeared / unknown          | 2,596 / 141 / 10,427  | unknown = aggregator-only                |
+| Baseline jobs / not in baseline                          | 12,241 / 923          | Not in baseline only after a second pull |
+| New openings (employer-board jobs with an opening date)  | 150                   | Aggregator-only jobs never counted       |
+| ATS listings inactive in staging but not disappeared     | 0                     | 0 with K = 1 and no failed pull          |
+| Pulls that failed                                        | 0                     | Each one explained                       |
+| Jobs with a skill, among jobs with a full description    | 3,710 of 4,749        | Coverage for Q9                          |
+
+### 10.2 Collection coverage by week
+
+| **Week starting** | **Fully pulled** | **Sources**                                                                                                        |
+|-------------------|------------------|--------------------------------------------------------------------------------------------------------------------|
+| 2026-09-06        | 3 of 3           | jooble, jsearch, greenhouse                                                                                        |
+| 2026-09-13        | 3 of 3           | smartrecruiters, workable, ashby                                                                                   |
+| 2026-09-20        | 4 of 6           | smartrecruiters, ashby, greenhouse, workable; the aggregators were pulled but did not repeat the baseline campaign |
+
+No week yet has all six sources fully pulled, so a change between two weeks can be a change in collection rather than in the market. For the ATS boards, the first pull of each board and the week of 2026-09-20 are comparable.
+
+### 10.3 Field completeness baseline, measured 2026-09-24
+
+| **Source**      | **Listings** | **No usable company** | **City field empty** | **Employment type empty** | **Workplace type empty** | **Median description (chars)** |
+|-----------------|--------------|-----------------------|----------------------|---------------------------|--------------------------|--------------------------------|
+| Jooble          | 8,262        | 23.5%                 | 100% (no field)      | 100%                      | 100%                     | 279                            |
+| JSearch         | 1,924        | 0.4%                  | 3.4%                 | 0.7%                      | 98.4%                    | 2,261                          |
+| Workable        | 1,535        | 0.0%                  | 0.1%                 | 34.5%                     | 99.6%                    | 2,514                          |
+| SmartRecruiters | 943          | 0.0%                  | 0.0%                 | 0.0%                      | 0.0%                     | 1,337                          |
+| Greenhouse      | 215          | 0.0%                  | 100% (no field)      | 88.4%                     | 100%                     | 9,987 (escaped HTML)           |
+| Ashby           | 49           | 0.0%                  | 22.4%                | 0.0%                      | 8.2%                     | 4,500                          |
+
+### 10.4 Pipeline audit: RAW to staging
+
+analyses/pipeline_audit reports, per source, the RAW rows, the staging rows, and the rows removed with the reason (copies across snapshots, umbrella boards, overlapping queries and date windows, failed pages, non-Saudi postings). The test assert_raw_reconciles_with_staging passes on the build of 2026-09-27; the per-source figures are TBD until the audit is run on the final build.
+
+## 11. Build status
+
+| **Object** | **Status on 2026-09-28** |
+|---|---|
+| stg\_\* (6) | Built, tests passing |
+| int_landed_files, int_board_pulls, int_source_weeks | Built, tests passing |
+| int_job_listings, int_listing_groups, int_match_candidates, int_jobs_matched, int_job_openings, int_job_skills | Built, tests passing; identical output on a repeated build |
+| Seeds (10) | Built: sources, city mapping, company aliases, job categories, role families, experience levels, seniority keywords, skills, currency rates, match review |
+| fct_jobs, dim_job_posting, dim_company, dim_location, dim_role, dim_job_attributes, dim_date, dim_source, dim_skill, bridge_job_skill | Built, tests passing; exported to ADLS curated/ as Parquet |
+
+## 12. Known limitations
+
+Each limitation is stated with its measured size, so a user outside the team knows where the dataset is thin. Figures are from the build of 2026-09-27 unless another date is given.
+
+| **Limitation**                               | **Size**                                                                                                                                        | **Effect**                                                                                                |
+|----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| No week with every source fully pulled       | Aggregators fully pulled only in the week of 2026-09-06; ATS boards in the weeks of 2026-09-13 and 2026-09-20                                   | A change between weeks can be a change in collection; weekly answers are read against section 10.2        |
+| Lifecycle known for employer-board jobs only | 2,737 of 13,164 jobs (20.8%); 10,427 aggregator-only jobs are unknown                                                                           | Q7 and Q8 describe employer-board jobs                                                                    |
+| Few new openings so far                      | 150, all from employer boards; 773 aggregator-only jobs outside the baseline are not counted                                                    | Q7 gains one point per pull after the baseline                                                            |
+| Closed and removed postings look the same    | All sources                                                                                                                                     | Only disappearance is observed; the disappeared date is an upper bound (a pull, not the real closing day) |
+| Old postings on ATS boards                   | Posting dates back to 2018-07-11                                                                                                                | The posting date does not define new openings; Q8 uses the median                                         |
+| Undisclosed employers and agencies           | Private Company alone was 13.4% of listings on 2026-09-24; 195 aliases flag recruitment agencies                                                | Never matched across sources when undisclosed; both excluded from employer questions                      |
+| Location less precise than city              | 185 region-level and 261 country-level listings                                                                                                 | Not matched with city-level listings; country-level rows are absent from region rankings                  |
+| Workable multi-city postings                 | 13,164 jobs from 12,713 postings                                                                                                                | A flexible opening advertised in several cities counts once per city                                      |
+| Sparse attributes                            | Experience level known for 39.9% of jobs (13.6% from the source alone); on 2026-09-24 employment type 30.4% and workplace type 7.9% of listings | Attribute questions describe the covered subset; coverage is shown with each answer                       |
+| Title rules for experience level             | Agree with the source field 78% of the time                                                                                                     | Title-based levels carry basis = title, so they can be filtered out                                       |
+| Short Jooble descriptions                    | Median 279 characters, against 1,337 to 4,500 elsewhere                                                                                         | Skill shares use jobs with a full description only                                                        |
+| Salary                                       | 283 listings (2.1%); hourly and daily amounts not converted                                                                                     | Stored where present; no salary question                                                                  |
+| Fuzzy tier off                               | 8,826 candidate pairs not yet labelled                                                                                                          | The same job with differently worded titles stays two jobs; the unique job count is an upper bound        |
+| Title entirely in brackets                   | 1 listing, "(Accountant)"                                                                                                                       | Its title key is empty, so it is not matched                                                              |
+
+## 13. Open decisions (TBD)
+
+None of these changes the model's structure. Each is settled from a measurement.
+
+| **Decision**                                                               | **Settled by**                                                         | **Affects**                        |
+|----------------------------------------------------------------------------|------------------------------------------------------------------------|------------------------------------|
+| Fuzzy score (Jaccard or Jaro-Winkler) and threshold                        | Labelled sample, section 8.7                                           | int_jobs_matched                   |
+| Consecutive misses before a listing counts as disappeared (K, currently 1) | Share of listings that disappear and reappear across ATS pulls         | lifecycle_status, disappeared date |
+| Recent window (currently 7 days)                                           | Gap between pulls of each source                                       | open_until_date                    |
+| Company aliases                                                            | Review of analyses/companies_not_in_seed                               | seed_company_aliases               |
+| Full aggregator campaign (currently all baseline queries)                  | Queries the aggregators can repeat within their quotas                 | int_source_weeks                   |
+| Title entirely in brackets                                                 | Use the text inside the brackets when removing them leaves nothing     | title_norm                         |
+
+## Appendix A. Design decisions
+
+Basis: \[GUIDE\] required by the project guide; \[WCD\] the WeCloudData capstone breakdown; \[DATA\] decided by a measurement; \[PRACTICE\] standard practice; \[TEAM\] a team decision.
+
+| **\#** | **Decision**                                                                                                                        | **Reason**                                                                                      | **Basis**          |
+|--------|-----------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|--------------------|
+| C1     | Star schema with one fact table, fct_jobs; weeks come from date roles, not from a weekly table                                | Every question is a plain join from fct_jobs to one dimension; event weeks come from date roles | \[TEAM\]           |
+| C2     | Q1 to Q6 and Q9 over the observation period; Q7 and Q8 by week                                                                    | No week yet has every source fully pulled (section 10.2)                                        | \[DATA\]           |
+| C3     | Q4 to Q6 and Q9 describe open jobs, not new openings                                                                              | New openings are 150 employer-board jobs so far, too few to describe composition                | \[DATA\]           |
+| C4     | New openings only for jobs with an employer-board listing                                                                         | 773 of the 923 jobs outside the baseline were aggregator-only                                   | \[DATA\]           |
+| C5     | lifecycle_status is open, disappeared, or unknown; aggregator-only jobs are unknown                                               | A listing missing from a query result proves nothing                                            | \[PRACTICE\]       |
+| C6     | Pull success read from RAW file metadata: a job-list payload                                                                      | Staging keeps no trace of a failed pull                                                         | \[PRACTICE\]       |
+| C7     | Disappearance needs staging's inactive flag and K successful pulls of the listing's own board                                     | A failed or skipped pull would otherwise close a whole board                                    | \[PRACTICE\]       |
+| C8     | Full pull recorded per source and week; an aggregator week must repeat the baseline campaign                                      | Period comparisons are read against collection coverage                                         | \[DATA\]           |
+| C9     | A text naming several cities is kept at the region they share, else country                                                       | Keeps region answers for two cities of one region                                               | \[DATA\]           |
+| C10    | Publisher rule, not a same-source rule, with rank-to-rank pairing                                                           | 25 cross-publisher groups inside the aggregators were left unmerged                             | \[DATA\]           |
+| C11    | Fuzzy tier: level words, mutual best match, both scores stored, off until a labelled threshold                                    | Jaro-Winkler scored different Qiddiya jobs 86 to 93                                             | \[GUIDE\] \[DATA\] |
+| C12    | A unique tie-break wherever one listing is chosen                                                                                 | Labels keyed by listing must join on every build; verified with hash_agg                        | \[PRACTICE\]       |
+| C13    | Experience level from title rules kept at 70% agreement or more                                                                   | 78% agreement; known levels from 11.9% to 38.9% of listings                                     | \[DATA\]           |
+| C14    | experience_level, experience_level_basis and remote_status in dim_job_attributes                                | Column names follow the code                                                                    | \[PRACTICE\]       |
+| C15    | dim_job_posting at posting grain, one to many with fct_jobs                                                                       | A Workable posting in several cities is one posting and one job per city                        | \[DATA\]           |
+| C16    | Proposed role families for dim_role                                                                                               | Job titles must be normalised into role families                                                | \[GUIDE\]          |
+| C17    | Skill dictionary decided: 133 keywords, 125 skills, 12 groups                                                                     | Terms found in at least 10 of 4,304 full descriptions                                           | \[GUIDE\] \[DATA\] |
+| C18    | Salary periods week and day added; week converted, day not                                                                        | All 283 salary texts follow one grammar                                                         | \[DATA\]           |
+| C19    | No listing bridge in the marts; listing provenance stays in int_jobs_matched, and fct_jobs keeps primary_source_sk and listing counts | One row per listing already exists in the intermediate layer                                    | \[PRACTICE\]       |
+| C20    | Quality results produced by tests and analyses on every build, not stored in quality marts                                      | The checks read the built layers directly                                                       | \[PRACTICE\]       |
+| C21    | dim_date covers every date role up to the latest successful pull                                                                  | open_until_date can fall after the last sighting                                                | \[PRACTICE\]       |
+| C22    | Idempotency checked by comparing hash_agg fingerprints of two builds                                                              | The pipeline must re-run cleanly                                                                | \[GUIDE\] \[WCD\]  |

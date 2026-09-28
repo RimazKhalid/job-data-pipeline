@@ -1,6 +1,6 @@
 -- dbt/analyses/business_questions.sql
 --
--- Answers to Q1 to Q9 (data model v3, section 2), read from the MARTS schema only.
+-- Answers to Q1 to Q9 (data_model.md, section 2), read from the MARTS schema only.
 -- Run each query on its own in a Snowflake worksheet (cursor inside it, then Ctrl+Enter).
 --
 -- Time frames:

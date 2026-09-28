@@ -1,5 +1,5 @@
 -- dbt/tests/assert_ats_latest_pull_not_collapsed.sql
--- Guard for is_active on the employer boards (data_model.md, Section 7.2; dbt/DATA_QUALITY.md).
+-- Guard for is_active on the employer boards (data_model.md, section 7.1; dbt/DATA_QUALITY.md).
 --
 -- An ATS file is read as a full snapshot, and an empty file means "pulled, nothing open". So a pull
 -- that comes back empty or collapsed (API change, broken Saudi filter, renamed field) would mark

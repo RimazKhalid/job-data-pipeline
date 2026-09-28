@@ -105,7 +105,7 @@ The six sources fall into two families, and the difference drives most of the pi
 
 The 26 September aggregator re-run repeated only the general query (`L0_general_sa`), not the
 campaign's layers, so it cannot show which campaign listings were taken down. Aggregator listings
-therefore have no active/taken-down status (`data_model.md`, Section 7.2).
+therefore have no lifecycle status: their jobs are `unknown` (`data_model.md`, section 7.1).
 
 ATS boards were found manually (no ATS offers a list of its clients): by web search for each
 platform's job-page pattern, then keeping boards that returned Saudi postings.
@@ -145,7 +145,7 @@ Corrections to the probe results:
 
 | Finding | Design decision | Where |
 |---|---|---|
-| No source reports whether a posting is open, filled or closed | Lifecycle is inferred from disappearance between collections, and only for ATS boards, whose files list every open job | Staging `is_active`; data model Section 7.2 |
+| No source reports whether a posting is open, filled or closed | Lifecycle is inferred from disappearance between collections, and only for ATS boards, whose files list every open job | Staging `is_active`; `lifecycle_status` in `fct_jobs` (`data_model.md`, section 7.1) |
 | Workable publishes one record per target city under the same `shortcode` | Listing key is `shortcode` + city | `stg_workable_jobs` |
 | Only SmartRecruiters filters by country on the server | Ashby, Greenhouse and Workable are filtered by location keywords in the extraction scripts; Greenhouse also in staging, because its first collection was not filtered (24 non-Saudi postings removed) | Extraction scripts; `stg_greenhouse_jobs` |
 | Ashby returns no company name | Board slugs are mapped to company names | `seed_company_aliases` |
