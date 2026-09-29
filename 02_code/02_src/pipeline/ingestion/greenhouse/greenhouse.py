@@ -19,7 +19,7 @@ This script:
 A file is written even when a board has no Saudi postings, so dbt can tell
 "this board was pulled and has nothing open" from "this board was not pulled".
 
-Run from the repo root:  python pipeline/ingestion/greenhouse/greenhouse.py
+Run from 02_code/02_src:  python pipeline/ingestion/greenhouse/greenhouse.py
 """
 
 import json

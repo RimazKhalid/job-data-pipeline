@@ -20,7 +20,7 @@ A file is written even when a company has no Saudi postings. A company whose lis
 after the retries is skipped and gets no file, so dbt treats it as "not pulled" rather than
 "all postings closed". A failed detail request keeps the posting with jobAd = null.
 
-Run from the repo root:  python pipeline/ingestion/smartrecruiters/smartrecruiters.py
+Run from 02_code/02_src:  python pipeline/ingestion/smartrecruiters/smartrecruiters.py
 """
 
 import json

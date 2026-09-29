@@ -22,8 +22,8 @@ pipeline/
     └── upload_to_adls.py   mirrors the local landing zone into ADLS
 ```
 
-Run every command below **from the repo root**, after `pip install -r requirements.txt` and
-filling in `.env` (copied from `.env.example`).
+Run every command below **from `02_code/02_src`**, after `pip install -r ../requirements.txt`
+and filling in `02_code/.env` (copied from `02_code/.env.example`).
 
 ---
 
@@ -57,9 +57,10 @@ by the Snowflake stage and by dbt:
 
 ### `config.py` — landing zone and keys
 
-- Resolves every path from its own location: `pipeline/common/` → `pipeline/` → repo root.
-  This is why `pipeline/` must stay at the repo root.
-- Loads `.env` from the repo root. `JOOBLE_API_KEYS` / `JSEARCH_API_KEYS` are comma-separated
+- Resolves every path from its own location: `pipeline/common/` → `pipeline/` → `02_src/` →
+  `02_code/` → repository root. The landing zone `raw/` sits next to the repository (outside git);
+  `JOB_PIPELINE_RAW_DIR` points it elsewhere.
+- Loads `.env` from `02_code/`. `JOOBLE_API_KEYS` / `JSEARCH_API_KEYS` are comma-separated
   when there are several keys; a missing variable stops the run with an explicit error.
 - `raw_dir_for(source)` returns `raw/<source>/`, used by all six extraction scripts.
 

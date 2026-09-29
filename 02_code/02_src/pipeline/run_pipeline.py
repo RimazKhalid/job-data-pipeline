@@ -16,8 +16,8 @@ request quotas (Jooble: 500 requests per key, lifetime), so they are extracted o
 with --sources, which runs their default collector query. Upload, load and build always cover all
 six sources, so files already landed from earlier campaigns are still loaded and rebuilt.
 
-Run from the repo root, after `pip install -r requirements.txt`, with .env filled in and a
-working dbt profile (`py -m dbt.cli.main debug` passes):
+Run from 02_code/02_src, after `pip install -r ../requirements.txt`, with 02_code/.env filled in
+and a working dbt profile (`py -m dbt.cli.main debug` passes in dbt/):
 
     py pipeline/run_pipeline.py                                   # everything, ATS sources
     py pipeline/run_pipeline.py --steps load freshness build      # reload and rebuild only
@@ -36,9 +36,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_DIR = Path(__file__).resolve().parents[1]
-DBT_DIR = REPO_DIR / "dbt"
-sys.path.insert(0, str(REPO_DIR / "pipeline"))
+SRC_DIR = Path(__file__).resolve().parents[1]      # 02_code/02_src: every script path below is relative to it
+DBT_DIR = SRC_DIR / "dbt"
+sys.path.insert(0, str(SRC_DIR / "pipeline"))
 from common import config  # noqa: E402
 
 EXTRACTORS = {
@@ -111,12 +111,12 @@ def main():
     for step in steps:
         if step == "extract":
             for source in args.sources:
-                if run("extract " + source, [sys.executable, *EXTRACTORS[source]], REPO_DIR, args.dry_run):
+                if run("extract " + source, [sys.executable, *EXTRACTORS[source]], SRC_DIR, args.dry_run):
                     failed_step = "extract " + source
                     break
         elif step == "upload":
             if run("upload to ADLS", [sys.executable, "pipeline/landing/upload_to_adls.py"],
-                   REPO_DIR, args.dry_run):
+                   SRC_DIR, args.dry_run):
                 failed_step = "upload"
         elif step == "load":
             if run("COPY INTO RAW", dbt("run-operation", "load_raw"), DBT_DIR, args.dry_run):

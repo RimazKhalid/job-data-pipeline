@@ -1,4 +1,4 @@
-﻿# .gitignore
+# .gitignore
  
 # secrets: every .env variant except the placeholder template
 .env
@@ -19,7 +19,8 @@ extract_log.csv
 run_log.csv
 # greenhouse.py used to write <board>_jobs.json into the folder it ran from
 /*_jobs.json
-pipeline/**/*_jobs.json
+02_code/02_src/*_jobs.json
+02_code/02_src/pipeline/**/*_jobs.json
  
 # python
 __pycache__/
@@ -27,10 +28,11 @@ __pycache__/
 .venv/
 venv/
  
-# dbt
-dbt/target/
-dbt/logs/
-dbt/dbt_packages/
+# dbt (also covered by 02_code/02_src/dbt/.gitignore)
+02_code/02_src/dbt/target/
+02_code/02_src/dbt/logs/
+02_code/02_src/dbt/dbt_packages/
+02_code/02_src/dbt/.user.yml
  
 logs/
  

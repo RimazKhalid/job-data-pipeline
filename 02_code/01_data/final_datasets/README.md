@@ -1,4 +1,4 @@
-<!-- final_datasets/README.md -->
+<!-- 02_code/01_data/final_datasets/README.md -->
 # Final datasets — Job Market Data Pipeline (Saudi Arabia)
 
 Exports of the ten tables in Snowflake schema `JOB_PIPELINE_DB.MARTS`: the star schema that
@@ -10,7 +10,7 @@ Parquet, `stjobdata26/curated/<table>/export_date=<date>/`.
 | **Generated** | 2026-09-29, from the final build of 2026-09-29, data up to 2026-09-28 (323 checks passed, 0 warnings, 0 errors) |
 | **Observation window** | September 2026: employer boards collected several times between 9 and 28 September; aggregators collected as a query campaign on 9–12 September and repeated on 27–28 September |
 | **Sources** | Ashby, Greenhouse, SmartRecruiters, Workable (employer job boards); Jooble, JSearch (aggregators) |
-| **Model** | `dbt/data_modeling/data_model.md`; diagram `dbt/data_modeling/schema_diagram.png` |
+| **Model** | `02_code/02_src/dbt/data_modeling/data_model.md`; diagram `02_code/03_assets/schema_diagram.png` |
 
 ## Files
 
