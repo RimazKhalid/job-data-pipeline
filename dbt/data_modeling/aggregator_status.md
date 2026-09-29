@@ -61,9 +61,9 @@ copy can never keep a closed job open, and never closes an open one.
 - `tests/assert_job_lifecycle_consistent.sql`: no opening date for baseline or aggregator-only jobs;
   a disappeared date after the last employer-board sighting; no job open after the latest
   successful pull.
-- `tests/assert_ats_latest_pull_not_collapsed.sql`: stops the build if a source's latest
-  employer-board pull holds less than half the postings of the one before, so an API change cannot
-  mark a whole source as disappeared.
+- `tests/assert_ats_latest_pull_not_collapsed.sql`: stops the build if an employer board's latest
+  successful pull holds less than half the postings of its pull before (boards with 10 or more
+  postings), so an API change cannot mark a whole board as disappeared.
 
 ## 6. Effect on the business questions
 

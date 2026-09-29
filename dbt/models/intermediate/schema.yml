@@ -269,9 +269,10 @@ models:
 
   - name: int_source_weeks
     description: >
-      Collection coverage: one row per source per week with a successful file. is_full_pull: any
-      successful board pull for an ATS source; for an aggregator, a week that repeats the baseline
-      campaign's queries (var aggregator_campaign_coverage). Evidence for the data quality report:
+      Collection coverage: one row per source per week with a successful file. is_full_pull: for an
+      ATS source, every board that existed by the end of the week and ever held a posting was pulled
+      successfully; for an aggregator, a week that repeats the baseline campaign's queries (var
+      aggregator_campaign_coverage). Evidence for the data quality report:
       it shows which sources were collected when, so a change between periods can be read against it.
     data_tests:
       - dbt_utils.unique_combination_of_columns:

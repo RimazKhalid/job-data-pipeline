@@ -140,7 +140,8 @@ its own board has `is_active` = true; one missing from it is false. This is the 
 job lifecycle: `int_job_listings` marks a listing disappeared once `disappearance_misses`
 successful pulls of its board confirm it, and `int_job_openings` sets `lifecycle_status` (`open`,
 `disappeared`, `unknown`) in `fct_jobs`. A test (`assert_ats_latest_pull_not_collapsed`) stops
-the build if a source's latest pull holds less than half the postings of the one before, so a
+the build if a board's latest successful pull holds less than half the postings of its pull before
+(boards with 10 or more postings; vars `ats_collapse_ratio`, `ats_collapse_min_postings`), so a
 broken pull is never read as "everything closed".
 
 Aggregator listings (Jooble, JSearch) have `is_active` = null: a search result is not a full list
