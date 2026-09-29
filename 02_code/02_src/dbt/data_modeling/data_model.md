@@ -515,7 +515,7 @@ The reliability questions become this report. It is produced on every build by t
 | Postings shared by several jobs with a different description per job | 0 of 214     | 0                                        |
 | dbt build                                                | 323 passed               | 0 warnings, 0 errors                     |
 
-Row counts of the ten exported tables are listed in final_datasets/README.md.
+Row counts of the ten exported tables are listed in 02_code/01_data/final_datasets/README.md.
 
 ### 10.2 Collection coverage by week
 

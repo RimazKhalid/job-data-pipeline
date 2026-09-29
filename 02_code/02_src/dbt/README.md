@@ -32,8 +32,8 @@ what only warns) is in [`DATA_QUALITY.md`](DATA_QUALITY.md).
 
 ## How to run
 
-The whole pipeline, from the repo root: `py pipeline/run_pipeline.py` (see the root README). dbt on
-its own, from this folder:
+The whole pipeline, from `02_code/02_src`: `py pipeline/run_pipeline.py` (see `02_code/README.md`).
+dbt on its own, from this folder:
 
 ```powershell
 py -m dbt.cli.main deps                  # installs dbt_utils
@@ -231,7 +231,7 @@ Parameters are dbt vars in `dbt_project.yml` (`fuzzy_match_function`, `fuzzy_mat
 
 ## Marts layer
 
-A star schema ([`data_modeling/data_model.md`](data_modeling/data_model.md), diagram in `data_modeling/schema_diagram.png`): `fct_jobs` (one job: a job
+A star schema ([`data_modeling/data_model.md`](data_modeling/data_model.md), diagram in `02_code/03_assets/schema_diagram.png`): `fct_jobs` (one job: a job
 advertisement in one Saudi location, after cross-source matching) and eight dimensions:
 `dim_job_posting`, `dim_company`, `dim_location`, `dim_role` (role family and job category),
 `dim_job_attributes`, `dim_date` (role-playing: posted, first seen, last seen, opening, open until,
@@ -261,26 +261,26 @@ RAW-to-staging counts and the layer checks are re-created by `analyses/pipeline_
 
 ### One-time setup (once per machine)
 
-1. Install the pinned tools from the repo root:
+1. Download a copy of the project:
+   ```powershell
+   git clone https://github.com/RimazKhalid/job-data-pipeline.git
+   cd job-data-pipeline\02_code
+   ```
+
+2. Install the pinned tools:
    ```powershell
    pip install -r requirements.txt
    ```
 
-2. Download a copy of the project:
-   ```powershell
-   git clone https://github.com/RimazKhalid/job-data-pipeline.git
-   cd job-data-pipeline
-   ```
-
 3. Connect the project to Snowflake with your own login: copy `dbt/profiles.example.yml` to
-   `dbt/profiles.yml` (git-ignored) and put your account, user and password in `.env`
-   (copied from `.env.example`). Never commit either file.
+   `dbt/profiles.yml` (git-ignored) and put your account, user and password in `02_code/.env`
+   (copied from `02_code/.env.example`). Never commit either file.
 
 4. Confirm the role and connection:
    - `JOB_PIPELINE_DEV` must be granted to your user (`snowflake/roles_and_grants.sql`).
    - `profiles.yml` must use `role: JOB_PIPELINE_DEV`, not `ACCOUNTADMIN` or `PUBLIC`.
    ```powershell
-   cd dbt
+   cd 02_src\dbt
    py -m dbt.cli.main debug
    ```
    It should end with "All checks passed!"

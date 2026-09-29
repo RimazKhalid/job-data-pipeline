@@ -25,4 +25,4 @@ repos:
         language: pygrep
         # SAS signature, JSearch ak_ keys, Jooble UUID keys
         entry: '(sig=|ak_[a-z0-9]{20,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
-        files: '^\.env\.example$'
+        files: '(^|/)\.env\.example$'

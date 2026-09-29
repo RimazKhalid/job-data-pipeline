@@ -18,12 +18,12 @@ Uses the Blob endpoint of the account (<account>.blob.core.windows.net), the sam
 the Snowflake stage reads from. Each file is written in a single request, so an upload
 lands the whole file or nothing.
 
-Needs in .env (see .env.example):
+Needs in 02_code/.env (see 02_code/.env.example):
     ADLS_ACCOUNT_NAME   storage account name
     ADLS_CONTAINER      container name, default "raw"
     ADLS_SAS_TOKEN      SAS scoped to the container, with Read, Add, Create, Write and List
 
-Run from the repo root:
+Run from 02_code/02_src:
     py pipeline/landing/upload_to_adls.py                    all sources
     py pipeline/landing/upload_to_adls.py --source ashby     one source (repeatable)
     py pipeline/landing/upload_to_adls.py --dry-run          show what would be uploaded
