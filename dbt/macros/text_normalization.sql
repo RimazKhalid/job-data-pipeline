@@ -23,13 +23,23 @@
     Removes bracketed notes ("(Saudi National)"), hiring noise and location words that sources
     append to the same job differently, and expands common abbreviations. A title that is only a
     bracketed note ("(Accountant)") keeps the words inside the brackets, so it still has a key.
+
+    Before that, two differences between sources that [[:punct:]] does not see are removed:
+      - Unicode dashes, quotes and Arabic punctuation become spaces. [[:punct:]] covers ASCII
+        only, so "Pricing Lead – Middle East" (JSearch) kept "–" as a word and did not meet
+        "Pricing Lead - Middle East" (Jooble) in the exact tier.
+      - "&" becomes "and": JSearch writes "IT Support and Network Administrator" where the
+        employer board writes "IT Support & Network Administrator".
+    Company keys are not changed here, because seed_company_aliases is stored in
+    normalize_company() form.
 #}
 {% macro normalize_title(column) %}
     {%- set noise = ['urgent', 'urgently', 'hiring', 'required', 'needed', 'wanted', 'immediate',
                      'saudi national', 'saudi nationals', 'saudis only', 'saudi only',
                      'ksa', 'saudi arabia', 'saudi', 'riyadh', 'jeddah', 'dammam', 'khobar', 'al khobar'] -%}
-    {%- set cleaned = "regexp_replace(lower(" ~ column ~ "), '\\\\([^)]*\\\\)|\\\\[[^]]*\\\\]', ' ')" -%}
-    {%- set base = "coalesce(" ~ normalize_text(cleaned) ~ ", " ~ normalize_text("lower(" ~ column ~ ")") ~ ")" -%}
+    {%- set prepared = "regexp_replace(replace(lower(" ~ column ~ "), '&', ' and '), '[–—‐‑‒―’‘“”«»•·…،؛؟]', ' ')" -%}
+    {%- set cleaned = "regexp_replace(" ~ prepared ~ ", '\\\\([^)]*\\\\)|\\\\[[^]]*\\\\]', ' ')" -%}
+    {%- set base = "coalesce(" ~ normalize_text(cleaned) ~ ", " ~ normalize_text(prepared) ~ ")" -%}
     {%- set expanded = "regexp_replace(regexp_replace(regexp_replace(' ' || " ~ base ~ " || ' ', ' sr ', ' senior '), ' jr ', ' junior '), ' mgr ', ' manager ')" -%}
     {{ remove_words(expanded, noise) }}
 {% endmacro %}
