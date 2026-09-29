@@ -7,7 +7,7 @@ SDA Data Engineering Bootcamp capstone, Project 2: Job Market Data Pipeline, sco
 
 | Name | Role |
 |---|---|
-| Rimaz Khalid Alghamdi | Repository owner; ingestion, landing to ADLS, Snowflake setup, exports |
+| Rimaz Khalid Alghamdi | Repository owner; ingestion, Snowflake setup,dbt setup,staging layer,export, built curated container in ADLS,, designed and built the pipeline orchestrator (run_pipeline.py) |
 | Ghadah BaniAli | |
 | Azizah Alharbi | |
 | Shahd Aldukhayil | dbt intermediate layer, cross-source matching, job lifecycle, data model document |
