@@ -30,7 +30,6 @@ quality report and limitations: [`02_src/dbt/data_modeling/data_model.md`](02_sr
 
 ![Star schema](03_assets/schema_diagram.png)
 
-![dbt lineage](03_assets/dbt_lineage.png)
 
 **Results of the final build** (data collected 9 to 28 September 2026): 20,490 listings merged into
 19,148 unique jobs (1,203 by exact matching, 20 by fuzzy matching); 1,008 jobs (5.3%) found on more
@@ -50,7 +49,7 @@ job-skill links. dbt build: 10 seeds, 25 models, 288 data tests, 323 passed, 0 w
 │   ├── snowflake/          warehouse, database, RAW tables, stages, roles and grants
 │   ├── probes/             scripts that tested each aggregator's real behaviour before collection
 │   └── source_investigation/
-├── 03_assets/              star schema diagram, dbt lineage, screenshots
+├── 03_assets/              star schema diagram, dbt lineage, test_results (screenshots)
 ├── requirements.txt
 ├── .env.example
 └── README.md               this file
