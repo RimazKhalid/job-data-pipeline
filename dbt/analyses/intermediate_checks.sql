@@ -23,6 +23,21 @@ union all
 select 'listings naming several cities', count_if(cities_named > 1)::varchar, 'a handful (5 on 28 Sep), none given a city'
 from {{ ref('int_job_listings') }}
 union all
+select 'listings kept at region level although one city is named', count_if(location_level = 'region' and cities_named = 1)::varchar,
+       '0: a city is preferred over a region'
+from {{ ref('int_job_listings') }}
+union all
+select 'match keys where one publisher reached through JSearch and Jooble is still two jobs', count(*)::varchar,
+       '0: the publisher rule applies per source'
+from (
+    select title_norm, company_norm, city_std, publisher
+    from {{ ref('int_jobs_matched') }}
+    where source_type = 'Aggregator'
+      and title_norm is not null and company_norm is not null and city_std is not null
+    group by title_norm, company_norm, city_std, publisher
+    having count(distinct source_name) > 1 and count(distinct job_sk) > 1
+) k
+union all
 select 'jobs by experience basis: ' || experience_level_basis, count(*)::varchar, 'title adds coverage'
 from {{ ref('int_job_openings') }} group by experience_level_basis
 union all
