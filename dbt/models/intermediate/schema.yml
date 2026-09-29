@@ -164,7 +164,7 @@ models:
       One row per listing with the job (job_sk) it belongs to after cross-source matching.
       Tier 1: exact groups from int_listing_groups. Tier 2: two exact groups are merged when their
       score in int_match_candidates reaches var('fuzzy_match_threshold') and each is the other's
-      best candidate; off while the threshold is null. is_representative marks the listing whose
+      best candidate (Jaccard at 80; a null threshold turns the tier off). is_representative marks the listing whose
       values represent the job. data_model.md, section 8.
     columns:
       - name: source_record_sk
@@ -179,7 +179,7 @@ models:
         data_tests:
           - not_null
       - name: match_tier
-        description: "'fuzzy' (tier-2 merge), 'exact' (several listings with one match key) or 'single'."
+        description: "'fuzzy' (tier-2 merge), 'exact' (several postings with one match key) or 'single'."
         data_tests:
           - not_null
           - accepted_values:
@@ -189,7 +189,8 @@ models:
   - name: int_listing_groups
     description: >
       One row per listing with its exact match group: title_norm + company_norm + city_std, the
-      publisher rule, and rank-to-rank pairing of one publisher's postings. Tier 1 of matching.
+      publisher rule, and rank-to-rank pairing of one publisher's postings on one source. Tier 1 of
+      matching.
     columns:
       - name: source_record_sk
         data_tests:

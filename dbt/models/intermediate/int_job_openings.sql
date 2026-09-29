@@ -122,7 +122,7 @@ aggregated as (
         -- matching
         case
             when count_if(match_tier = 'fuzzy') > 0 then 'fuzzy'
-            when count(*) > 1                        then 'exact'
+            when count(distinct posting_sk) > 1      then 'exact'
             else 'single'
         end                                                                       as match_tier,
         max(fuzzy_match_score)                                                    as fuzzy_match_score,
