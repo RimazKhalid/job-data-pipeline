@@ -1,10 +1,3 @@
-﻿
-
-#azure-storage-file-datalake
- 
-
-
-
 # requirements.txt
 # Pinned so a new clone installs the same versions the pipeline was tested with.
 # Install from the repo root:  pip install -r requirements.txt
@@ -19,4 +12,4 @@ dbt-core==1.12.3
 dbt-snowflake==1.12.0
 
 # optional, for the secret-scanning hook in .pre-commit-config.yaml
-pre-commit
+pre-commit==4.6.2

@@ -94,7 +94,7 @@ aggregated as (
         min(first_seen_date)                                                      as first_seen_date,
         max(last_seen_date)                                                       as last_seen_date,
         -- last sighting on an employer board: disappearance is decided from the boards, and an
-        -- aggregator copy can outlive the employer's own posting (20 jobs on 2026-09-28)
+        -- aggregator copy can outlive the employer's own posting
         max(iff(source_type = 'ATS', last_seen_date, null))                       as ats_last_seen_date,
 
         -- employer-board evidence only
