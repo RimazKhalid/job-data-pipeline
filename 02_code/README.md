@@ -1,7 +1,7 @@
 <!-- 02_code/README.md -->
 # Saudi Job Market Data Pipeline: code, data and setup
 
-Team A, SDA Data Engineering Bootcamp capstone (Project 2, Job Market Data Pipeline).
+Group A, SDA Data Engineering Bootcamp capstone (Project 2, Job Market Data Pipeline).
 
 ## 1. What the project does
 
@@ -46,10 +46,11 @@ job-skill links. dbt build: 10 seeds, 25 models, 288 data tests, 323 passed, 0 w
 ├── 02_src/
 │   ├── pipeline/           extraction scripts (one per source), landing to ADLS, run_pipeline.py
 │   ├── dbt/                dbt project: staging, intermediate, marts, seeds, tests, analyses, data model
+│   ├── powerbi/            Power BI report on MARTS, its theme and the measure validation query
 │   ├── snowflake/          warehouse, database, RAW tables, stages, roles and grants
 │   ├── probes/             scripts that tested each aggregator's real behaviour before collection
 │   └── source_investigation/
-├── 03_assets/              star schema diagram, dbt lineage, test_results (screenshots)
+├── 03_assets/              star schema diagram, dbt lineage, test_results and dashboard screenshots
 ├── requirements.txt
 ├── .env.example
 └── README.md               this file
@@ -67,7 +68,7 @@ Every folder under `02_src/` has its own README with the details: `pipeline/READ
 | dbt package | `dbt_utils` 1.4.1 (`02_src/dbt/packages.yml`) | Surrogate keys and generic tests |
 | Snowflake account | any edition | RAW, STAGING, INTERMEDIATE, MARTS and SEEDS schemas |
 | Azure Storage account | ADLS Gen2, containers `raw` and `curated` | Raw landing zone and curated export |
-| Power BI Desktop | optional | Dashboard on MARTS, read-only role |
+| Power BI Desktop | current release, Windows | The dashboard in `02_src/powerbi/` |
 
 ## 3. Install
 
@@ -114,6 +115,13 @@ The aggregator campaigns (Jooble, JSearch) run separately through
 **Business questions Q1 to Q9** are answered by `02_src/dbt/analyses/business_questions.sql` in a
 Snowflake worksheet; the quality report comes from `pipeline_audit.sql`, `intermediate_checks.sql`
 and `model_checks.sql` in the same folder.
+
+**Dashboard.** Open `02_src/powerbi/Job_Market_Data_Pipeline_GroupA_Dashboard_v1.pbix` in Power BI
+Desktop. It imports the ten MARTS tables; to refresh it, sign in to Snowflake with the read-only
+`JOB_PIPELINE_REPORTER` role. The eight pages (cover, overview, where, who hires, roles and skills,
+job terms, market dynamics, data coverage) are shown in `03_assets/dashboard_*.png`, and
+`02_src/powerbi/measures_and_validation.dax` checks every measure against the marts
+(`02_src/powerbi/README.md`).
 
 **Without Snowflake**, the final dataset is in `01_data/final_datasets/` as CSV, with its columns
 described in the README there.
