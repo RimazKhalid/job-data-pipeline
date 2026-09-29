@@ -55,10 +55,10 @@ files into postings, so a pull that failed or returned nothing leaves no trace t
 | Var | Value | Status |
 |---|---|---|
 | `business_timezone` | `Asia/Riyadh` | Decided |
-| `fuzzy_match_function` | null | TBD: `jaccard` or `jaro_winkler`, chosen from the labelled sample |
-| `fuzzy_match_threshold` | null | TBD: chosen from the labelled sample; null keeps the fuzzy tier off |
-| `disappearance_misses` | 1 | TBD: 1 reproduces the staging rule |
-| `recent_window_days` | 7 | TBD: the weekly collection interval |
+| `fuzzy_match_function` | `jaccard` | Chosen from 88 labelled pairs (data_model.md, section 8.7) |
+| `fuzzy_match_threshold` | 80 | Precision 0.917, in-sample recall 0.579; null turns the fuzzy tier off |
+| `disappearance_misses` | 1 | None of the 2,769 ATS listings reappeared after missing a pull of its board |
+| `recent_window_days` | 7 | The weekly collection schedule |
 | `aggregator_campaign_coverage` | 1.0 | Definition of a full campaign |
 
 ## Choosing the fuzzy threshold
@@ -71,6 +71,8 @@ files into postings, so a pull that failed or returned nothing leaves no trace t
    threshold from 50 to 100, for both scores.
 4. Set `fuzzy_match_function` and `fuzzy_match_threshold`, rebuild, and report the threshold with its
    precision, recall and number of labelled pairs.
+5. Run `analyses/fuzzy_merge_audit.sql` and check every merge the tier made. Final build: Jaccard at 80,
+   49 of 51 merges the same job (data_model.md, section 8.7).
 
 A test build on the repository's samples showed why the choice needs labels: Jaro-Winkler scored
 different Qiddiya jobs that share the prefix "Assistant Manager -" at 86 to 93
