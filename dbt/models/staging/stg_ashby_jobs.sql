@@ -76,7 +76,8 @@ scoped as (
     select *
     from renamed
     where country_raw = 'Saudi Arabia'
-       -- fallback only when the structured field is missing(to handel false positive)
+       -- fallback only when the structured field is missing (the keyword filter at extraction
+       -- let "Thailand (Remote)" through because "hail" is inside "Thailand")
        or (country_raw is null
            and location_raw ilike any ('%saudi%', '%riyadh%', '%jeddah%', '%dammam%', '%khobar%', '%dhahran%'))
 ),

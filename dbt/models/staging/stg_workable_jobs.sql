@@ -15,8 +15,8 @@
 --   6. posting_date_raw: published_on / created_at are date-only, converted to midnight UTC.
 --   7. Added department, function, industry, education.
 --   8. copies_landed: how many landed copies of this posting RAW holds (all snapshots), counted
---      before dedup because this is the last layer where the copies exist. Used by the quality
---      measures in fct_job_listings.
+--      before dedup because this is the last layer where the copies exist. Summed into
+--      fct_jobs.copies_landed and checked by tests/assert_raw_reconciles_with_staging.sql.
 
 with source as (
     select

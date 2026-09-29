@@ -321,10 +321,11 @@ city_hits as (
         city_std,
         region_std
     from city_candidates
-    -- earliest mention; ties go to the longer alias, then the alias itself
+    -- a city before a region, so "Eastern Province, Dammam" keeps Dammam; then the earliest
+    -- mention, the longer alias, and the alias itself
     qualify row_number() over (
         partition by source_record_sk
-        order by hit_start, hit_length desc, alias
+        order by iff(city_std is null, 1, 0), hit_start, hit_length desc, alias
     ) = 1
 ),
 
