@@ -68,6 +68,11 @@ vars:
   # Share of the baseline campaign's queries that an aggregator week must repeat to count as a full
   # pull. 1.0 is the definition of a full campaign: every baseline query run again.
   aggregator_campaign_coverage: 1.0
+  # Guard on each employer board (tests/assert_ats_latest_pull_not_collapsed.sql): the build fails
+  # when a board's latest successful pull holds less than this share of the postings of its pull
+  # before. Boards with fewer postings than the minimum in the pull before are not checked.
+  ats_collapse_ratio: 0.5
+  ats_collapse_min_postings: 10
 
 # Lookup tables kept in Git (cities, job categories, companies, experience levels, sources).
 seeds:

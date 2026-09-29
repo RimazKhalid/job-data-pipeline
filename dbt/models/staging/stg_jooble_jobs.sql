@@ -2,7 +2,7 @@
 --
 -- Grain: one row per Jooble posting (source_job_id).
 --
--- Built on the team version, with four changes specific to how this source was collected:
+-- Built on the team version, with five changes specific to how this source was collected:
 --
 --   1. Only HTTP 200 pages are parsed. Failed pages are landed on purpose in the raw
 --      layer and carry no usable payload.
@@ -11,13 +11,15 @@
 --      null instead of aborting the whole run.
 --
 --   3. ingested_at is the collection time recorded in the envelope, not loaded_at.
---      All 771 raw pages share a single loaded_at value because they were loaded by one
---      COPY INTO, while they carry 771 distinct collection times. loaded_at therefore
---      cannot order duplicate copies; it is kept only as a tie-breaker.
+--      Every page loaded by one COPY INTO shares one loaded_at value, while each page carries
+--      its own collection time. loaded_at therefore cannot order duplicate copies; it is kept
+--      only as a tie-breaker, followed by the file name and the position in the page, so the
+--      same copy is kept on every build.
 --
 --   4. Within-source duplicates are removed here. Coverage was built from overlapping
 --      queries against a source that caps each query at 1000 records, so the same
---      posting came back under the same id many times: 14,010 rows for 8,262 ids.
+--      posting came back under the same id many times: 32,297 rows for 12,828 ids in the
+--      final build (analyses/pipeline_audit.sql).
 --      Keeping them would fail a unique test on source_job_id, this model's key.
 --      The same real job listed on a different source carries a different id, passes
 --      that test, and is resolved in the intermediate layer instead.
@@ -43,10 +45,12 @@ parsed as (
 
 flattened as (
     select
+        file_name,
         loaded_at,
         batch_id,
         ingested_at,
         http_status,
+        job.index as job_index,
         job.value as job_json
     from parsed,
     -- note: Jooble's array key is "jobs", not "data" like JSearch
@@ -101,7 +105,7 @@ from keyed
 -- keep the most recently collected copy of each posting
 qualify row_number() over (
     partition by source_job_id
-    order by ingested_at desc, loaded_at desc
+    order by ingested_at desc, loaded_at desc, file_name desc, job_index
 ) = 1
 
 )

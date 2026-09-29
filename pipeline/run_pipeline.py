@@ -106,7 +106,7 @@ def main():
     print("run_id %s | steps: %s | extract: %s%s"
           % (run_id, ", ".join(steps), ", ".join(args.sources), " | DRY RUN" if args.dry_run else ""))
 
-    failed_step, warnings = None, []
+    failed_step = None
 
     for step in steps:
         if step == "extract":
@@ -143,14 +143,12 @@ def main():
     status = "failed" if failed_step else ("dry_run" if args.dry_run else "succeeded")
     print("\n" + "=" * 70)
     print("run %s %s%s" % (run_id, status.upper(), " at step: " + failed_step if failed_step else ""))
-    for w in warnings:
-        print("warning: " + w)
     if not args.dry_run:
         write_run_log({"run_id": run_id, "started_at": started_at,
                        "finished_at": datetime.now(timezone.utc).isoformat(),
                        "steps": " ".join(steps), "extracted_sources": " ".join(args.sources),
                        "status": status, "failed_step": failed_step or "",
-                       "warnings": " | ".join(warnings)})
+                       "warnings": ""})   # column kept so existing run_log.csv files stay aligned
         print("run log: " + RUN_LOG)
     sys.exit(1 if failed_step else 0)
 

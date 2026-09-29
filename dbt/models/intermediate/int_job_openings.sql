@@ -5,8 +5,9 @@
 -- the same values, and the lifecycle of section 7.1.
 --
 --   From the representative listing   posting_sk, source, company, location, job_category,
---                                     title, URLs
---   Longest cleaned description       description_text (skills and readers get the fullest text)
+--                                     title, URLs, description_text and description_basis: what
+--                                     the posting itself says, so dim_job_posting holds values
+--                                     of the posting and not of another listing merged into the job
 --   First known value by priority     employment_type, salary (text and parsed fields together)
 --   Source field before title         experience_level: a level the source gives beats one read
 --                                     from the title, then source priority
@@ -86,16 +87,6 @@ aggregated as (
         min_by(salary_min_sar_month, iff(salary_text is not null, priority_rank, null)) as salary_min_sar_month,
         min_by(salary_max_sar_month, iff(salary_text is not null, priority_rank, null)) as salary_max_sar_month,
 
-        -- longest cleaned description; ties go to the listing with the better priority
-        min_by(description_text, iff(description_text is null, null,
-                                     -length(description_text) * 1000 + priority_rank))
-                                                                                  as description_text,
-        case
-            when count_if(description_basis = 'full' and description_text is not null) > 0 then 'full'
-            when count_if(description_text is not null) > 0                               then 'snippet'
-            else 'none'
-        end                                                                       as description_basis,
-
         coalesce(min(iff(source_type = 'ATS', posting_date, null)), min(posting_date))
                                                                                   as posting_date,
         min(first_seen_at)                                                        as first_seen_at,
@@ -103,7 +94,7 @@ aggregated as (
         min(first_seen_date)                                                      as first_seen_date,
         max(last_seen_date)                                                       as last_seen_date,
         -- last sighting on an employer board: disappearance is decided from the boards, and an
-        -- aggregator copy can outlive the employer's own posting (20 jobs on 2026-09-28)
+        -- aggregator copy can outlive the employer's own posting
         max(iff(source_type = 'ATS', last_seen_date, null))                       as ats_last_seen_date,
 
         -- employer-board evidence only
@@ -122,7 +113,7 @@ aggregated as (
         -- matching
         case
             when count_if(match_tier = 'fuzzy') > 0 then 'fuzzy'
-            when count(*) > 1                        then 'exact'
+            when count(distinct posting_sk) > 1      then 'exact'
             else 'single'
         end                                                                       as match_tier,
         max(fuzzy_match_score)                                                    as fuzzy_match_score,
@@ -173,8 +164,9 @@ select
 
     r.job_title,
     r.title_norm,
-    a.description_text,
-    a.description_basis,
+    r.description_text,
+    -- full, snippet (a Jooble snippet), or none when the posting has no description
+    iff(r.description_text is null, 'none', r.description_basis)                  as description_basis,
     r.job_url,
     r.apply_url,
     a.salary_text,
@@ -189,8 +181,6 @@ select
     a.posting_date,
     a.first_seen_at,
     a.last_seen_at,
-    iff(a.posting_date is null, null,
-        datediff('day', a.posting_date, a.last_seen_at::date))                     as days_open,
     a.is_active,
     a.status_basis,
 

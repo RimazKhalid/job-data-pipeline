@@ -195,6 +195,8 @@ models:
           - accepted_values:
               arguments:
                 values: ['posted', 'first_seen']
+      - name: salary_text
+        description: "Salary as published, from the first listing (by source priority) that has one; the parsed fields below come from the same listing."
       - name: salary_currency
         description: "SAR or USD, when the salary text was parsed."
         data_tests:
@@ -259,9 +261,9 @@ models:
       - name: job_title
         description: "Title as published by the representative listing."
       - name: description_text
-        description: "Longest cleaned description among the job's listings: HTML entities decoded, tags removed."
+        description: "Description of the posting itself (the job's representative listing): HTML entities decoded, tags removed."
       - name: description_basis
-        description: "full; snippet when the only description is a Jooble snippet; none."
+        description: "full; snippet when the posting is a Jooble snippet; none when the posting has no description. Q9 counts jobs whose posting is full."
         data_tests:
           - not_null
           - accepted_values:
@@ -271,8 +273,6 @@ models:
         description: "Link to the posting."
       - name: apply_url
         description: "Link to apply, when the source gives one."
-      - name: salary_text
-        description: "Salary as published, from the listing the parsed salary fields come from."
 
   - name: dim_company
     description: "One row per company (company_norm), plus Unknown for missing names and placeholders."

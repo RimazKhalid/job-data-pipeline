@@ -14,7 +14,7 @@ lowers completeness, it warns.
 | Block | A file failed to upload to ADLS | `pipeline/landing/upload_to_adls.py` | Run stops at `upload` |
 | Block | A landed file is not valid JSON | `macros/load_raw.sql` (`COPY INTO`, `ON_ERROR = ABORT_STATEMENT`) | Run stops at `load` |
 | Block | An employer-board source is older than 15 days | `models/sources.yml` (`error_after`) | Run stops at `freshness` |
-| Block | The latest ATS pull holds less than half the postings of the pull before, on the same boards | `tests/assert_ats_latest_pull_not_collapsed.sql` | `dbt build` fails, no export |
+| Block | An employer board's latest successful pull holds less than half the postings of its pull before (boards with 10 or more postings) | `tests/assert_ats_latest_pull_not_collapsed.sql` | `dbt build` fails, no export |
 | Block | Keys: `unique` and `not_null` on every model key (Workable: shortcode + city) | `models/*/schema.yml` | `dbt build` fails |
 | Block | Closed vocabularies: employment type, workplace type, remote status, experience level and its basis, location level, source type, status basis, lifecycle status, match tier, salary currency and period, description basis | `models/*/schema.yml`, `seeds/schema.yml` | `dbt build` fails |
 | Block | Referential integrity: `relationships` on every key of `fct_jobs` (six dimensions and six date roles) and of `bridge_job_skill`; exactly one Unknown member per dimension (dim_source has none: every job has a known source) | `models/marts/schema.yml`, `tests/generic/has_one_unknown_member.sql` | `dbt build` fails |

@@ -7,7 +7,7 @@
 -- A pair is a candidate when:
 --   - blocking: both groups have the same company_norm and city_std;
 --   - the titles differ (equal titles are already one exact group);
---   - the two groups share no publisher (section 8.1 still holds after a merge);
+--   - the two groups share no publisher on the same source (section 8.1 still holds after a merge);
 --   - both titles carry the same level words (macros/matching.sql): "data analyst" never
 --     meets "data analyst intern";
 --   - one of the two scores is at least 50. This floor only keeps the table small; pairs below it
@@ -49,18 +49,20 @@ groups as (
 ),
 
 group_publishers as (
-    select distinct match_group, company_norm, city_std, publisher
+    select distinct match_group, company_norm, city_std, publisher, source_name
     from listings
 ),
 
 shared_publisher as (
-    -- group pairs of one block that hold a listing of the same publisher: never merged
+    -- group pairs of one block that hold a listing of the same publisher on the same source:
+    -- never merged
     select distinct a.match_group as match_group_a, b.match_group as match_group_b
     from group_publishers a
     join group_publishers b
         on  a.company_norm = b.company_norm
         and a.city_std = b.city_std
         and a.publisher = b.publisher
+        and a.source_name = b.source_name
         and a.match_group < b.match_group
 ),
 

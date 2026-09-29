@@ -2,21 +2,23 @@
 --
 -- Grain: one row per JSearch posting (source_job_id, which is job_uid).
 --
--- Built on the team version, with four changes specific to how this source was collected:
+-- Built on the team version, with six changes specific to how this source was collected:
 --
---   1. Only HTTP 200 pages are parsed. This source returns intermittent 504s under depth,
---      and one such page is present in raw_jsearch.
+--   1. Only HTTP 200 pages are parsed. This source returns 429 and 403 when a key's quota runs
+--      out and 504 under depth; the final build holds 101 such pages in raw_jsearch, landed on
+--      purpose and re-requested under a new batch.
 --
 --   2. try_parse_json instead of parse_json. A gateway error body is not guaranteed to be
 --      JSON at all, so a malformed body must yield null instead of aborting the run.
 --
 --   3. ingested_at is the collection time recorded in the envelope, not loaded_at, which is
 --      a single value shared by every page loaded in one COPY INTO. loaded_at is kept only
---      as a tie-breaker.
+--      as a tie-breaker, followed by the file name and the position in the page, so the same
+--      copy is kept on every build.
 --
 --   4. Within-source duplicates are removed here. Coverage was built by querying the same
 --      market through four date_posted windows that re-rank rather than filter, so the
---      windows overlap heavily: 3,089 rows for 1,924 postings. Keeping them would fail a
+--      windows overlap heavily: 7,624 rows for 4,893 postings in the final build. Keeping them would fail a
 --      unique test on source_job_id, this model's key. The same real job listed on a
 --      different source carries a different id and is resolved in the intermediate layer.
 --
@@ -45,10 +47,12 @@ parsed as (
 
 flattened as (
     select
+        file_name,
         loaded_at,
         batch_id,
         ingested_at,
         http_status,
+        job.index as job_index,
         job.value as job_json
     from parsed,
     lateral flatten(input => response_json:data) as job
@@ -92,7 +96,7 @@ select
     -- source-specific columns (unique to JSearch, handled at, intermediate stage)
     nullif(trim(job_json:job_publisher::string), '')                               as job_publisher,       -- "Jooble" appears here, confirming the two sources partially feed each other
     nullif(trim(job_json:job_id::string), '')                                      as job_id,              -- per-request id of the surviving copy, kept for traceability only, never a key
-    nullif(trim(job_json:job_salary_string::string), '')                           as salary_raw,          -- the field exists on every record but is empty in all 3,089 rows collected
+    nullif(trim(job_json:job_salary_string::string), '')                           as salary_raw,          -- the field exists on every record but is usually empty
     job_json:job_is_remote::boolean                                                as is_remote,           -- true / false; see note 5
 
     -- observation window across every landed copy, computed before the copies are dropped
@@ -109,7 +113,7 @@ from keyed
 -- keep the most recently collected copy of each posting
 qualify row_number() over (
     partition by source_job_id
-    order by ingested_at desc, loaded_at desc
+    order by ingested_at desc, loaded_at desc, file_name desc, job_index
 ) = 1
 
 )

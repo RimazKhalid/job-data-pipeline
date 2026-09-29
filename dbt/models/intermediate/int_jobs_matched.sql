@@ -8,17 +8,18 @@
 --   Tier 2  fuzzy: two exact groups from int_match_candidates are merged when their score
 --           reaches var('fuzzy_match_threshold') and each is the other's best candidate
 --           (mutual best match). Every group has one best candidate, so a group joins at most
---           one other group: pairs cannot chain (A~B, B~C) into a job that holds two listings of
---           one publisher. Ties go to the closer first-seen dates, then to the group key.
---           The tier is off while the threshold is null (the default): the function and the
---           threshold are chosen from the labelled sample, never assumed.
+--           one other group: pairs cannot chain (A~B, B~C) into a job that holds two postings of
+--           one publisher on one source. Ties go to the higher score, then the closer first-seen
+--           dates, then the group key. The function and the threshold are dbt vars chosen from the
+--           labelled sample (Jaccard at 80, dbt_project.yml); a null threshold turns the tier off.
 --
 --   job_sk             source_record_sk of the job's anchor, its earliest listing (first seen, then
 --                      source_record_sk). Stable as long as the anchor stays in the same job.
 --   is_representative  the listing whose values represent the job, chosen by source_priority
 --                      (seed_sources), then first seen, then source_record_sk.
---   match_tier         'fuzzy' when the tier-2 merge applied, 'exact' when the exact group has
---                      several listings, 'single' otherwise.
+--   match_tier         'fuzzy' when the tier-2 merge applied, 'exact' when the exact group holds
+--                      several postings, 'single' otherwise (the cities of one Workable posting
+--                      that resolve to one location are one posting, not a match).
 
 {% set fn = var('fuzzy_match_function') %}
 {% set threshold = var('fuzzy_match_threshold') %}
@@ -79,7 +80,7 @@ final_groups as (
         coalesce(f.merged_group, l.match_group)                             as final_group,
         case
             when f.match_group is not null then 'fuzzy'
-            when l.exact_group_size > 1    then 'exact'
+            when l.exact_group_has_postings  then 'exact'
             else 'single'
         end                                                                 as match_tier,
         f.fuzzy_match_score
@@ -98,5 +99,5 @@ select
         order by source_priority, first_seen_at, source_record_sk
     ) = 1                                                                    as is_representative,
     count(*) over (partition by final_group)                                 as listings_in_job,
-    * exclude (match_group, final_group, exact_group_size)
+    * exclude (match_group, final_group, exact_group_size, exact_group_has_postings)
 from final_groups
