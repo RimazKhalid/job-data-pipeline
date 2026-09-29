@@ -1,8 +1,8 @@
 <!-- 02_code/03_assets/README.md -->
 # 03_assets
 
-Images that document the project: the data model, the dbt lineage, and screenshots of the
-data-quality checks run in Snowflake on the final build (run `20260929T115551Z`, data collected up
+Images that document the project: the data model, the dbt lineage, the dashboard pages, and
+screenshots of the data-quality checks run in Snowflake on the final build (run `20260929T115551Z`, data collected up
 to 28 September 2026). The code that produces the data is in `02_src/`; this folder holds the
 evidence, so a reviewer can see the results without running the pipeline.
 
@@ -13,6 +13,7 @@ evidence, so a reviewer can see the results without running the pipeline.
 | `schema_diagram.png` | The star schema in the Snowflake `MARTS` schema: `fct_jobs`, eight dimensions and `bridge_job_skill`, with keys and relationships |
 | `dbt_lineage.png` | The dbt lineage graph: RAW sources → staging views → intermediate tables → marts, with the seeds that feed them |
 | `test_results/` | Screenshots of the data-quality checks, one per layer, described below |
+| `dashboard_01_cover.png` to `dashboard_08_coverage.png` | The eight pages of the Power BI dashboard (`02_src/powerbi/`), on the final build |
 
 ## test_results/
 
