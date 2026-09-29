@@ -20,7 +20,10 @@
 --   copies_landed        landed copies of those listings in RAW (additive)
 --   source_count         distinct sources among the listings (non-additive)
 --   days_listed          disappeared jobs only; summarised by median, never summed (non-additive)
---   salary_*             parsed salary; amounts are non-additive
+--   salary_*             salary as published (salary_text) and parsed; amounts are non-additive.
+--                        Taken together from the first listing, by priority, that has a salary, which
+--                        can be an aggregator copy of the job, so they live here and not in
+--                        dim_job_posting
 -- Jobs = SUM(job_count). Postings = COUNT(DISTINCT posting_sk). Through bridge_job_skill,
 -- jobs = COUNT(DISTINCT job_sk).
 
@@ -67,6 +70,7 @@ select
     o.days_listed,
     o.days_listed_basis,
 
+    o.salary_text,
     o.salary_currency,
     o.salary_period,
     o.salary_min_amount,

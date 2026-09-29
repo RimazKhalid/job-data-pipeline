@@ -29,26 +29,26 @@ join dim_location l on f.location_sk = l.location_sk
 group by 1
 order by job_openings desc;
 
--- Q2, drill-down: the 10 cities with the most open job openings
+-- Q2, drill-down: the 10 cities with the most open job openings (a tie at rank 10 keeps both)
 select l.city, l.region, sum(f.job_count) as job_openings
 from fct_jobs f
 join dim_location l on f.location_sk = l.location_sk
 where l.location_level = 'city'
 group by l.city, l.region
-order by job_openings desc
-limit 10;
+qualify rank() over (order by sum(f.job_count) desc) <= 10
+order by job_openings desc, l.city;
 
 
 -- Q3. Which employers had the most open job openings during the observation period,
--- excluding undisclosed employers and recruitment agencies?
+-- excluding undisclosed employers and recruitment agencies? A tie at rank 10 keeps both.
 select c.company_name, sum(f.job_count) as job_openings
 from fct_jobs f
 join dim_company c on f.company_sk = c.company_sk
 where c.company_sk <> '-1'
   and not c.is_recruitment_agency
 group by c.company_sk, c.company_name
-order by job_openings desc
-limit 10;
+qualify rank() over (order by sum(f.job_count) desc) <= 10
+order by job_openings desc, c.company_name;
 
 
 -- Q4. Which role families had the most open job openings during the observation period?
@@ -129,7 +129,8 @@ order by d.week_start_date;
 
 
 -- Q9. Which skills are mentioned by the largest share of open job openings that have a full
--- description, during the observation period? Jooble-only jobs (snippet) are outside the base.
+-- description, during the observation period? Jobs whose posting is a Jooble snippet, or has no
+-- description, are outside the base. A tie at rank 20 keeps both.
 -- Jobs are counted as COUNT(DISTINCT job_sk) because the bridge has one row per job per skill.
 with full_jobs as (
     select f.job_sk
@@ -145,5 +146,5 @@ from bridge_job_skill b
 join full_jobs j on b.job_sk = j.job_sk
 join dim_skill s on b.skill_sk = s.skill_sk
 group by s.skill_name, s.skill_group
-order by job_openings desc
-limit 20;
+qualify rank() over (order by count(distinct b.job_sk) desc) <= 20
+order by job_openings desc, s.skill_name;
