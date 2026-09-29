@@ -12,15 +12,15 @@ select 'listings = sum of staging' as check_name,
 union all
 select 'jobs', (select count(*) from {{ ref('int_job_openings') }})::varchar, 'fewer than listings'
 union all
-select 'jobs by match tier: ' || match_tier, count(*)::varchar, 'fuzzy = 0 while the threshold is null'
+select 'jobs by match tier: ' || match_tier, count(*)::varchar, 'fuzzy = the jobs listed by analyses/fuzzy_merge_audit.sql (51 on 28 Sep)'
 from {{ ref('int_job_openings') }} group by match_tier
 union all
-select 'fuzzy candidate pairs', (select count(*) from {{ ref('int_match_candidates') }})::varchar, 'input to the labelled sample'
+select 'fuzzy candidate pairs', (select count(*) from {{ ref('int_match_candidates') }})::varchar, 'scored pairs; seed_match_review labels a sample of them'
 union all
 select 'listings at location level: ' || location_level, count(*)::varchar, 'city for most'
 from {{ ref('int_job_listings') }} group by location_level
 union all
-select 'listings naming several cities', count_if(cities_named > 1)::varchar, 'a handful (3 Greenhouse on 24 Sep)'
+select 'listings naming several cities', count_if(cities_named > 1)::varchar, 'a handful (5 on 28 Sep), none given a city'
 from {{ ref('int_job_listings') }}
 union all
 select 'jobs by experience basis: ' || experience_level_basis, count(*)::varchar, 'title adds coverage'

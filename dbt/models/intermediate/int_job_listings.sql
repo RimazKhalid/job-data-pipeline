@@ -228,7 +228,7 @@ standardized as (
 ),
 
 salary as (
-    -- Every salary text observed (283 in the 26 September build) follows one grammar:
+    -- Every salary text observed (371 in the final build) follows one grammar:
     -- currency, amount or range, period, e.g. "SAR 15000 - 17000 per month", "$10 per hour".
     -- A text outside it is left unparsed (salary_is_parsed = false) and counted by the tests.
     select
@@ -255,13 +255,15 @@ salary_parsed as (
         iff(s.salary_is_parsed, s.salary_period, null)                               as salary_period,
         iff(s.salary_is_parsed, s.amount_1, null)                                    as salary_min_amount,
         iff(s.salary_is_parsed, coalesce(s.amount_2, s.amount_1), null)              as salary_max_amount,
-        -- to SAR per month: month x1, year /12, week x52/12. Hour and day are not converted,
-        -- because the hours and days worked per month are unknown.
+        -- to SAR per year: month x12, week x52, year x1. The monthly amount divides this by 12 at
+        -- the end, because 1 / 12 on its own keeps six decimals in Snowflake and turned
+        -- $45000 a year into 14,062 SAR a month instead of 14,063. Hour and day are not
+        -- converted, because the hours and days worked per month are unknown.
         case s.salary_period
-            when 'month' then 1
-            when 'year'  then 1 / 12
-            when 'week'  then 52 / 12
-        end * fx.sar_per_unit                                                        as to_sar_month
+            when 'month' then 12
+            when 'year'  then 1
+            when 'week'  then 52
+        end * fx.sar_per_unit                                                        as to_sar_year
     from salary s
     left join {{ ref('seed_currency_rates') }} fx
         on s.salary_currency = fx.currency
@@ -408,8 +410,8 @@ enriched as (
         sp.salary_period,
         sp.salary_min_amount,
         sp.salary_max_amount,
-        round(sp.salary_min_amount * sp.to_sar_month, 0)                             as salary_min_sar_month,
-        round(sp.salary_max_amount * sp.to_sar_month, 0)                             as salary_max_sar_month,
+        round(sp.salary_min_amount * sp.to_sar_year / 12, 0)                         as salary_min_sar_month,
+        round(sp.salary_max_amount * sp.to_sar_year / 12, 0)                         as salary_max_sar_month,
 
         -- ATS: from staging (absent from the latest pull of its own board = taken down).
         -- Aggregators: null = unknown.
