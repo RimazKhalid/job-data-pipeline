@@ -7,7 +7,7 @@ Parquet, `stjobdata26/curated/<table>/export_date=<date>/`.
 
 | | |
 |---|---|
-| **Generated** | 2026-09-29, from the final build (322 checks passed, 0 warnings, 0 errors) |
+| **Generated** | 2026-09-29, from the final build of 2026-09-29, data up to 2026-09-28 (323 checks passed, 0 warnings, 0 errors) |
 | **Observation window** | September 2026: employer boards collected several times between 9 and 28 September; aggregators collected as a query campaign on 9–12 September and repeated on 27–28 September |
 | **Sources** | Ashby, Greenhouse, SmartRecruiters, Workable (employer job boards); Jooble, JSearch (aggregators) |
 | **Model** | `dbt/data_modeling/data_model.md`; diagram `dbt/data_modeling/schema_diagram.png` |
@@ -16,8 +16,8 @@ Parquet, `stjobdata26/curated/<table>/export_date=<date>/`.
 
 | File | Rows | Grain |
 |---|---:|---|
-| `fct_jobs.csv` | 19,212 | One job: one job advertisement in one Saudi location, after merging its listings across sources |
-| `dim_job_posting.csv` | 18,758 | One job posting (+ Unknown). A Workable posting open in several cities is one posting and one job per city |
+| `fct_jobs.csv` | 19,148 | One job: one job advertisement in one Saudi location, after merging its listings across sources |
+| `dim_job_posting.csv` | 18,694 | One job posting (+ Unknown). A Workable posting open in several cities is one posting and one job per city |
 | `dim_company.csv` | 3,005 | One employer after entity resolution (+ the Unknown member, `Employer not disclosed`) |
 | `dim_location.csv` | 58 | One location at city, region or country level (+ Unknown) |
 | `dim_role.csv` | 20 | One job category with its role family (+ Unknown) |
@@ -25,10 +25,10 @@ Parquet, `stjobdata26/curated/<table>/export_date=<date>/`.
 | `dim_date.csv` | 3,003 | One day, from the oldest posting date to the latest collection (+ Unknown `-1`) |
 | `dim_source.csv` | 6 | One source |
 | `dim_skill.csv` | 126 | One canonical skill (+ Unknown) |
-| `bridge_job_skill.csv` | 22,864 | One job per skill mentioned in its titles or descriptions |
+| `bridge_job_skill.csv` | 22,822 | One job per skill mentioned in its titles or descriptions |
 
-Totals: 20,490 listings → 19,212 jobs → 18,757 job postings. 947 jobs (4.9%) were found on more than
-one source. Lifecycle: 2,584 open and 177 disappeared (employer-board evidence); 16,451 jobs found
+Totals: 20,490 listings → 19,148 jobs → 18,693 job postings. 1,008 jobs (5.3%) were found on more than
+one source. Lifecycle: 2,584 open and 177 disappeared (employer-board evidence); 16,387 jobs found
 on aggregators only are `unknown`. 174 jobs are new openings (employer-board jobs not seen in any
 baseline pull).
 
@@ -62,6 +62,7 @@ baseline pull).
 | `source_count` | Distinct sources among the listings (1–6). Non-additive |
 | `days_listed` | Disappeared jobs only: days from the posting date (else first seen) to the disappeared date. Summarize with a median |
 | `days_listed_basis` | `posted` or `first_seen` |
+| `salary_text` | Salary as published, from the listing the parsed salary fields come from |
 | `salary_currency`, `salary_period` | `SAR` / `USD`; `hour`, `day`, `week`, `month`, `year` |
 | `salary_min_amount`, `salary_max_amount` | As published |
 | `salary_min_sar_month`, `salary_max_sar_month` | Converted to SAR per month for month, week and year; empty for hour and day |
@@ -70,7 +71,7 @@ baseline pull).
 
 | Table | Columns |
 |---|---|
-| `dim_job_posting` | `posting_sk`, `job_title`, `description_text`, `description_basis` (`full` / `snippet` / `none`), `job_url`, `apply_url`, `salary_text` |
+| `dim_job_posting` | `posting_sk`, `job_title`, `description_text`, `description_basis` (`full` / `snippet` / `none`), `job_url`, `apply_url`: what the posting itself says |
 | `dim_company` | `company_sk`, `company_name`, `company_norm`, `industry`, `is_recruitment_agency` (`true` for recruitment agencies and job boards, which advertise for other employers) |
 | `dim_location` | `location_sk`, `city`, `region`, `country`, `location_level` (`city` / `region` / `country`), `location_label` (display name, e.g. `Riyadh (no city given)` for a region-level row) |
 | `dim_role` | `role_sk`, `job_category`, `role_family` |
@@ -89,7 +90,7 @@ job_pipeline_db.marts` after the final build.
 ## Known limitations
 
 See `dbt/data_modeling/data_model.md`, section 12. In short: cross-source overlap is a lower
-bound (fuzzy matching merges only high-similarity titles; 49 of its 51 merges were checked correct);
+bound (fuzzy matching merges only high-similarity titles; 18 of its 20 merges are the same job by title, 1 is a different job, 1 is uncertain);
 experience level is sparse and partly read from titles; Jooble has no posting date and a snippet
 description; aggregator-only jobs have `lifecycle_status = 'unknown'`; `disappeared` means the posting
 left its employer board's public list, and its date is the first pull that confirmed it.

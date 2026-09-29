@@ -241,15 +241,15 @@ disappeared), `dim_source` and `dim_skill`, reached through `bridge_job_skill`. 
 
 ## Tests and results
 
-Every model, seed and test runs in `dbt build`. On the build of 2026-09-28: 321 passed,
-1 warning (one listing whose title normalizes to empty), 0 errors.
+Every model, seed and test runs in `dbt build`. On the final build (2026-09-29, data up to
+2026-09-28): 10 seeds, 25 models and 288 data tests, 323 passed, 0 warnings, 0 errors.
 
 - **Keys and grain:** `unique` / `not_null` on every key; `posting_sk` + `location_sk` unique in `fct_jobs`.
 - **Vocabularies:** `accepted_values` on employment type, workplace type, remote status, experience level, location level, source type, status basis, lifecycle status, match tier.
 - **Referential integrity:** `relationships` on every fact and bridge key, including the six date roles; exactly one Unknown member per dimension except `dim_source` (`tests/generic/has_one_unknown_member.sql`).
 - **Reconciliation:** RAW → staging → listings → matched → fact (`tests/assert_*`).
-- **Matching:** one representative listing per opening; never two postings of one publisher in one opening.
-- **Lifecycle:** `lifecycle_status` is unknown exactly for aggregator-only jobs; a disappeared date exactly for disappeared jobs; an opening date only on the first seen date; a disappeared date after the last employer-board sighting; ATS pulls must not collapse.
+- **Matching:** one representative listing per opening; never two postings of one publisher on one source in one opening; one employer and one location per job; `job_sk` is the earliest listing; a fuzzy job joins exactly two groups.
+- **Lifecycle:** `lifecycle_status` is unknown exactly for aggregator-only jobs; a disappeared date exactly for disappeared jobs; an opening date only on the first seen date; a disappeared date after the last employer-board sighting; no employer board's pull may collapse.
 
 RAW-to-staging counts and the layer checks are re-created by `analyses/pipeline_audit.sql` and
 `analyses/intermediate_checks.sql` and `analyses/model_checks.sql`; the recorded numbers are in

@@ -24,8 +24,38 @@ data_samples/
  
 | Type | Sources | How data is collected |
 |---|---|---|
-| **ATS boards** | Ashby, Workable, Greenhouse, SmartRecruiters | One public API call per company board; each file is a full snapshot of that board's open jobs |
+| **ATS boards** | Ashby, Workable, Greenhouse, SmartRecruiters | One public API call per company board; each file is the board's Saudi postings at that pull |
 | **Query aggregators** | Jooble, JSearch | Search APIs; coverage depends on a query matrix (cities, keywords, date windows) run until new results dry up |
+
+### Source inventory
+
+17 candidates were evaluated; the full table, with the reasons for every decision, is in
+[`source_investigation/source_investigation.md`](source_investigation/source_investigation.md).
+
+| Source | Access | Decision | Why |
+|---|---|---|---|
+| Workable | Public widget API, no key | Collected | Saudi employer accounts; experience level, industry, employment type |
+| SmartRecruiters | Public REST API, no key | Collected | The only server-side country filter (`country=sa`); structured location, experience level |
+| Ashby | Public REST API, no key | Collected | Real posting date, structured address, remote flag |
+| Greenhouse | Public REST API, no key | Collected | Company name and real posting date on every record |
+| Jooble | REST API, free key | Collected | Largest volume; reaches sites outside the team's ATS coverage |
+| JSearch (OpenWeb Ninja) | Commercial API, free tier | Collected | Full descriptions and the publisher of each listing |
+| Lever, Recruitee | Public REST API | Tested, not collected | Few boards answer through the API; their postings still arrive through Jooble |
+| LinkedIn, Indeed, GulfTalent, NaukriGulf, Glassdoor, Bayt | Web pages only | Excluded | Terms of use prohibit automated collection |
+| Jadarat, Taqat | Nafath login | Excluded | Require a citizen's national login |
+
+The four ATS scripts keep only Saudi postings before saving, and the folder date is the UTC date
+of the run; both are documented in [`pipeline/README.md`](pipeline/README.md) and in
+`data_model.md`, section 12.
+
+## Data model
+
+A star schema in Snowflake schema `MARTS`: `fct_jobs` and eight dimensions, with `bridge_job_skill`
+for skills. **Grain of `fct_jobs`: one row per unique job advertisement in one Saudi location, after
+the listings of the same job on several sources have been merged.** The model, its rules and its
+measured limitations are in [`dbt/data_modeling/data_model.md`](dbt/data_modeling/data_model.md).
+
+![Star schema](dbt/data_modeling/schema_diagram.png)
  
 ## Repo layout
  
@@ -140,10 +170,10 @@ passed ([`dbt/DATA_QUALITY.md`](dbt/DATA_QUALITY.md)). Every run is logged with 
 | Layer | Status |
 |---|---|
 | Source investigation | 17 candidates evaluated, 6 selected ([`source_investigation.md`](source_investigation/source_investigation.md)); probes for Jooble and JSearch, samples for all 6 |
-| Extraction | Scripts for all 6 sources, one landing layout; employer boards collected on three dates, aggregators as one campaign plus one general-query re-run |
+| Extraction | Scripts for all 6 sources, one landing layout; employer boards pulled on 9, 16, 19, 24, 25, 27 and 28 September; aggregators as one query campaign on 9 to 12 September, repeated in full on 27 and 28 September |
 | Raw data in ADLS | All 6 sources under `raw/<source>/ingest_date=YYYY-MM-DD/`, never overwritten |
 | Snowflake RAW | 6 VARIANT tables, loaded by `dbt run-operation load_raw` (`COPY INTO`, new files only) |
-| dbt | 25 models (6 staging → 9 intermediate → 10 marts), 10 seeds, tests on every layer; model in [`data_model.md`](dbt/data_modeling/data_model.md) |
+| dbt | 25 models (6 staging → 9 intermediate → 10 marts), 10 seeds, 288 data tests; final build 323 passed, 0 warnings, 0 errors; model in [`data_model.md`](dbt/data_modeling/data_model.md) |
 | Curated dataset | MARTS exported to ADLS `curated/` as Parquet (`export_marts`) and to [`final_datasets/`](final_datasets/README.md) as CSV |
 | Orchestration | `pipeline/run_pipeline.py` runs every step in order and stops at the first failure. ADF: linked services to ADLS and Snowflake built; scheduled pipeline not built |
 | Power BI | Not in this repo yet. Downstream only: connects to MARTS through the `JOB_PIPELINE_REPORTER` role |

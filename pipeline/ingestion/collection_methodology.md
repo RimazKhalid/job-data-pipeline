@@ -21,6 +21,9 @@ query on that day, so a job missing from a different query proves nothing (Secti
 
 - **Raw landing zone outside the repo.** Every file is written under `<raw>/<source>/ingest_date=YYYY-MM-DD/`
   (`config.raw_dir_for`), with `ingest_date` as the UTC date of the run. Raw data never enters git.
+  An ATS file carries no other time, so a pull made between 00:00 and 03:00 Riyadh time is dated
+  the day before (data_model.md, section 12). Aggregator envelopes carry `ingested_at`, which dbt
+  converts to Riyadh time.
 - **Append-only.** A file is never edited after it lands. `landing/upload_to_adls.py` copies new
   files to ADLS (`stjobdata26/raw/`) and never overwrites one already there; `dbt run-operation
   load_raw` then runs `COPY INTO` for new files only.
@@ -39,7 +42,7 @@ query on that day, so a job missing from a different query proves nothing (Secti
 | Ashby | `GET api.ashbyhq.com/posting-api/job-board/<board>` | In the script: `SAUDI_KEYWORDS` against `location`; staging re-checks the country (a substring match such as `hail` also matches `Thailand`) | None, whole board | In the response. Salary bands are off (`includeCompensation=false`) |
 | Greenhouse | `GET boards-api.greenhouse.io/v1/boards/<board>/jobs?content=true` | In the script: `SAUDI_KEYWORDS` against `location`. The 9 September files were not filtered; staging removes their 24 non-Saudi postings | None, whole board | In the response (HTML) |
 | SmartRecruiters | `GET api.smartrecruiters.com/v1/companies/<company>/postings?country=sa` | **By the API** (`country=sa`), the only server-side filter among the six sources | `offset` / `limit=100` until an empty page | One detail request per posting, adding its `jobAd` |
-| Workable | `GET apply.workable.com/api/v1/widget/accounts/<account>?details=true` | In the script: the structured `country` / `countryCode` fields; keyword matching only when both are missing | None, whole account | In the response (`details=true`) |
+| Workable | `GET apply.workable.com/api/v1/widget/accounts/<account>?details=true` | In the script: the structured `country` / `countryCode` fields; keyword matching only when both are missing. Postings without a title or a link are dropped | None, whole account | In the response (`details=true`) |
 
 Boards were found by hand (no ATS publishes its client list): a web search for each platform's
 job-page pattern, keeping the boards that returned Saudi postings. The board lists are at the top

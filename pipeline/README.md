@@ -160,7 +160,9 @@ python pipeline/ingestion/smartrecruiters/smartrecruiters.py
 - **Geographic filter at extraction.** Ashby, Workable and Greenhouse keep only postings whose
   location matches Saudi keywords; SmartRecruiters filters server-side with `country=sa`. This
   is the one deviation from "no filtering during extraction", done to keep the landed volume to
-  the project's scope. dbt re-checks the scope on the structured country field.
+  the project's scope. dbt re-checks the scope on the structured country field. The Workable script
+  also drops postings without a title or a link before saving. Collection has ended, so the
+  scripts are kept as they produced the data (data_model.md, section 12).
 - **SmartRecruiters** fetches each posting's detail page and adds its `jobAd` (the description
   sections) to the listing record before saving.
 - Workable and Greenhouse retry timeouts, connection errors and 5xx responses; SmartRecruiters
