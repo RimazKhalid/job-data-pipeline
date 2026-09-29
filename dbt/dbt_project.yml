@@ -44,8 +44,8 @@ models:
       +materialized: table
       +schema: marts
 
-# Parameters of the intermediate layer (data_model.md; intermediate_layer.md). A value marked TBD is an open decision
-# that is settled from a measurement, never by default. Override one run with, for example,
+# Parameters of the intermediate layer (data_model.md, section 13; intermediate_layer.md). Each value was set from a
+# measurement, never by default. Override one run with, for example,
 #   dbt build --vars '{fuzzy_match_threshold: null}'   (exact matching only)
 vars:
   # Dates are taken in the Saudi business time zone, so a pull lands in the week it happened in.
@@ -59,10 +59,11 @@ vars:
   fuzzy_match_function: 'jaccard'   # 'jaccard' (shared title words) or 'jaro_winkler'
   fuzzy_match_threshold: 80         # score from 0 to 100
   # K: successful pulls of its board that must miss an ATS posting before it counts as
-  # disappeared. TBD; 1 reproduces the current staging rule (absent from the latest pull).
+  # disappeared. 1: none of the 2,769 ATS listings was missing from a successful pull of its
+  # board and then seen again, so a second confirming pull changes no status (data_model.md, 13).
   disappearance_misses: 1
   # Days a job stays counted as open after its last evidence (its board's latest successful pull,
-  # or its last sighting on an aggregator). TBD; currently 7, the weekly collection interval.
+  # or its last sighting on an aggregator). 7, the weekly collection schedule (data_model.md, 13).
   recent_window_days: 7
   # Share of the baseline campaign's queries that an aggregator week must repeat to count as a full
   # pull. 1.0 is the definition of a full campaign: every baseline query run again.
