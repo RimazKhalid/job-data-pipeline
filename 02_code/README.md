@@ -138,16 +138,14 @@ your Snowflake user (`02_src/snowflake/roles_and_grants.sql`).
 
 Each limitation is measured in `data_model.md`, section 12. The main ones:
 
-- **Lifecycle only for employer-board jobs.** 16,387 of 19,148 jobs come from aggregators only;
-  a search result is not a full list, so their status is `unknown`.
+- **Lifecycle only for employer-board jobs.** Job-search APIs (Jooble, JSearch) return a ranked
+  sample of results and publish no closing status, so a job missing from a later search cannot be
+  read as closed. The 16,387 of 19,148 jobs found only through these APIs are therefore `unknown`
+  by design; open/closed status comes from employer boards, which list every open job.
 - **One week with every source fully pulled** (27 and 28 September), so weekly trends before it
   can reflect collection rather than the market.
 - **Raw ATS files hold only Saudi postings**: the scripts filtered them before saving. ATS folder
   dates are the UTC date of the run, so a pull after midnight Riyadh time carries the day before.
-- **Matching is heuristic.** In the final build 1 of 20 fuzzy merges joins two different jobs and
-  1 is uncertain; some jobs worded differently on two sources stay two jobs.
-- **Sparse attributes.** Experience level is known for 39.1% of jobs, employment type for 35.2%;
-  13.6% of jobs have no disclosed employer.
 - **Aggregator quotas.** Jooble allows 500 requests per key for its lifetime, so a new aggregator
   campaign needs new keys; the default runner extracts the four employer boards only.
 - **No schedule.** `run_pipeline.py` runs every step on demand; a scheduled Azure Data Factory

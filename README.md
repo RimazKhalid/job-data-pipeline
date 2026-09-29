@@ -58,7 +58,7 @@ Saudi_Job_Market_Data_Pipeline_Team_A_v1/
 ├── 02_code/
 │   ├── 01_data/          final datasets (CSV) and sample API responses
 │   ├── 02_src/           pipeline, dbt project, Snowflake scripts, probes, source investigation
-│   ├── 03_assets/        star schema diagram, dbt lineage, screenshots
+│   ├── 03_assets/        star schema diagram, dbt lineage, test_results (screenshots)
 │   ├── requirements.txt
 │   └── README.md         setup and run instructions
 ├── 03_project_report/    Saudi_Job_Market_Data_Pipeline_Team_A_Report_v1.pdf
