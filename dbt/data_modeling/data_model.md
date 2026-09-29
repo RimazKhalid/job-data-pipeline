@@ -425,7 +425,7 @@ The threshold was chosen from labelled pairs, and every merge it produced was th
 | Jaccard 85 | 1.0 (3 of 3) | 0.158 (3 of 19) |
 | Jaro-Winkler, best threshold (95) | 0.80 or lower | 0.42 |
 
-After the review fixes of 2026-09-29 (publisher rule per source, punctuation in the title key, grade numbers as level words), 76 of the 88 labelled pairs are still candidates, 14 of them the same job. Pairs whose titles now match exactly left the candidates, so the pairs left are the harder ones. analyses/match_label_status shows where each labelled pair stands. On the 76:
+After the review fixes of 2026-09-29 (publisher rule per source, punctuation in the title key, grade numbers as level words), 76 of the 88 labelled pairs are still candidates, 14 of them the same job. Pairs whose titles now match exactly left the candidates, so the pairs left are the harder ones. analyses/match_label_status shows where each labelled pair stands: of the other 12, 4 same-job pairs now merge in the exact tier (their titles differed only by a dash), 7 different-job pairs are no longer compared, and 1 same-job pair is no longer compared because "4 months" in one title is read as a grade (it scored 70 before, below the threshold, so no merge changed). No pair labelled as two jobs was merged. On the 76:
 
 | **Score and threshold** | **Precision** | **In-sample recall** |
 |---|---|---|
